@@ -41,6 +41,62 @@ def lerp_palette(
     )
 
 
+def _slice_linear_cmap(
+    cmap: matplotlib.colors.Colormap,
+    lo: float,
+    hi: float,
+    name: str,
+) -> matplotlib.colors.LinearSegmentedColormap:
+    """
+    Resample `cmap` over `[lo, hi]` into a new linear colormap named `name`.
+    """
+    n = cmap.N
+    return matplotlib.colors.LinearSegmentedColormap.from_list(
+        name,
+        cmap(np.linspace(lo, hi, n)),
+        N=n,
+    )
+
+
+def _slice_listed_cmap(
+    cmap: matplotlib.colors.ListedColormap,
+    lo: float,
+    hi: float,
+    name: str,
+) -> matplotlib.colors.ListedColormap:
+    """
+    Trim whole colors from the ends of `cmap` and rename the result `name`.
+    """
+    n = cmap.N
+    colors = np.asarray(cmap.colors)[round(lo * n) : n - round((1.0 - hi) * n)]
+    if len(colors) == 0:
+        raise ValueError("slice removes all colors from the colormap")
+    return matplotlib.colors.ListedColormap(colors, name=name)
+
+
+def slice_cmap(
+    cmap: matplotlib.colors.Colormap,
+    lo: float,
+    hi: float,
+    name: str | None = None,
+) -> matplotlib.colors.Colormap:
+    """
+    Return a copy of `cmap` restricted to the fractional range `[lo, hi]`.
+
+    `lo` and `hi` are fractions in `[0, 1]`, so `slice_cmap(cmap, 0.1, 0.9)`
+    trims the first and last 10%. A `ListedColormap` loses `round(lo * N)`
+    colors from the front and `round((1 - hi) * N)` from the back and stays
+    listed; any other colormap is resampled over `[lo, hi]` into a
+    `LinearSegmentedColormap`.
+    """
+    if not 0.0 <= lo < hi <= 1.0:
+        raise ValueError(f"require 0 <= lo < hi <= 1, got lo={lo}, hi={hi}")
+    cmap_name = name if name is not None else f"{cmap.name}_sliced"
+    if isinstance(cmap, matplotlib.colors.ListedColormap):
+        return _slice_listed_cmap(cmap, lo, hi, cmap_name)
+    return _slice_linear_cmap(cmap, lo, hi, cmap_name)
+
+
 # "fall" colormap with nicer extrema, nice for showing contact heat map.
 cm_wrr = matplotlib.colors.LinearSegmentedColormap.from_list(
     "wrr",

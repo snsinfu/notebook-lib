@@ -21,6 +21,7 @@ from .colors import (
     register_cmap,
     register_colormaps,
     register_cycle_palette,
+    slice_cmap,
 )
 from .density import kde_at, kde_contour
 from .logticks import (
@@ -50,6 +51,7 @@ __all__ = [
     "register_colormaps",
     "register_cycle_palette",
     "set_axis",
+    "slice_cmap",
     "smooth_matrix",
     "texsci",
     "update_plot",
