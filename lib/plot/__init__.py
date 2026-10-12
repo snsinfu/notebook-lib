@@ -7,6 +7,7 @@ that exist only to feed plots (`kde_at`, `texsci`).
 
 from __future__ import annotations
 
+from ..density.bandwidth import bw_method
 from .axes import (
     get_x_grid_line_at,
     get_y_grid_line_at,
@@ -37,6 +38,7 @@ __all__ = [
     "LogTicksFormatter",
     "LogTicksLocator",
     "attach_colorbar",
+    "bw_method",
     "cm_bkr",
     "cm_wrr",
     "get_x_grid_line_at",

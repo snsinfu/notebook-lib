@@ -11,6 +11,7 @@ import scipy.stats
 
 from lib.plot import (
     attach_colorbar,
+    bw_method,
     get_x_grid_line_at,
     get_y_grid_line_at,
     kde_at,
@@ -41,7 +42,7 @@ def test_texsci_plain_value():
 def test_scipy_density_matches_gaussian_kde(rng):
     x = rng.normal(size=200)
     y = rng.normal(size=200)
-    got = kde_at(x, y, method="scipy")
+    got = kde_at(x, y, kernel="scipy")
     expected = scipy.stats.gaussian_kde(np.vstack([x, y]))(np.vstack([x, y]))
     assert np.allclose(got, expected)
 
@@ -50,7 +51,7 @@ def test_scipy_weighted_density_matches_gaussian_kde(rng):
     x = rng.normal(size=200)
     y = rng.normal(size=200)
     weights = rng.uniform(0.1, 2.0, size=200)
-    got = kde_at(x, y, weights=weights, method="scipy")
+    got = kde_at(x, y, weights=weights, kernel="scipy")
     expected = scipy.stats.gaussian_kde(np.vstack([x, y]), weights=weights)(
         np.vstack([x, y])
     )
@@ -61,8 +62,8 @@ def test_kde_at_weights_change_result(rng):
     x = rng.normal(size=200)
     y = rng.normal(size=200)
     weights = rng.uniform(0.1, 2.0, size=200)
-    unweighted = kde_at(x, y, method="scipy")
-    weighted = kde_at(x, y, weights=weights, method="scipy")
+    unweighted = kde_at(x, y, kernel="scipy")
+    weighted = kde_at(x, y, weights=weights, kernel="scipy")
     assert not np.allclose(unweighted, weighted)
 
 
@@ -79,7 +80,7 @@ def test_kernel_density_integrates_to_one(rng):
     grid = np.linspace(-5, 5, 121)
     X, Y = np.meshgrid(grid, grid)
     density = kde_at(
-        x, y, at=(X.ravel(), Y.ravel()), method="kernel", bandwidth=0.5
+        x, y, at=(X.ravel(), Y.ravel()), kernel="gaussian", bandwidth=0.5
     ).reshape(X.shape)
     cell_area = (grid[1] - grid[0]) ** 2
     assert np.isclose(density.sum() * cell_area, 1.0, atol=0.05)
@@ -96,7 +97,7 @@ def test_kernel_weighted_density_integrates_to_one(rng):
         y,
         at=(X.ravel(), Y.ravel()),
         weights=weights,
-        method="kernel",
+        kernel="gaussian",
         bandwidth=0.5,
     ).reshape(X.shape)
     cell_area = (grid[1] - grid[0]) ** 2
@@ -107,14 +108,97 @@ def test_kde_at_rejects_negative_bandwidth(rng):
     x = rng.normal(size=50)
     y = rng.normal(size=50)
     with pytest.raises(ValueError):
-        kde_at(x, y, method="kernel", bandwidth=-1.0)
+        kde_at(x, y, kernel="gaussian", bandwidth=-1.0)
 
 
-def test_kde_at_rejects_unknown_method(rng):
+def test_kde_at_rejects_unknown_kernel(rng):
     x = rng.normal(size=50)
     y = rng.normal(size=50)
     with pytest.raises(ValueError):
-        kde_at(x, y, method="histogram")
+        kde_at(x, y, kernel="histogram")
+
+
+def test_scipy_rejects_absolute_bandwidth(rng):
+    # scipy's gaussian_kde only takes a relative factor, never a data-unit width.
+    x = rng.normal(size=50)
+    y = rng.normal(size=50)
+    with pytest.raises(ValueError):
+        kde_at(x, y, kernel="scipy", bandwidth=0.5)
+
+
+def test_default_scipy_bandwidth_has_effect(rng):
+    # Regression: bandwidth used to be silently ignored by the default backend.
+    x = rng.normal(size=200)
+    narrow = kde_at(x, bandwidth=bw_method(0.2))
+    wide = kde_at(x, bandwidth=bw_method(1.0))
+    assert not np.allclose(narrow, wide)
+
+
+def test_gaussian_absolute_bandwidth_has_effect(rng):
+    x = rng.normal(size=200)
+    narrow = kde_at(x, kernel="gaussian", bandwidth=0.05)
+    wide = kde_at(x, kernel="gaussian", bandwidth=5.0)
+    assert not np.allclose(narrow, wide)
+
+
+def test_scipy_bw_method_matches_gaussian_kde(rng):
+    x = rng.normal(size=200)
+    y = rng.normal(size=200)
+    got = kde_at(x, y, kernel="scipy", bandwidth=bw_method(0.5))
+    expected = scipy.stats.gaussian_kde(np.vstack([x, y]), bw_method=0.5)(
+        np.vstack([x, y])
+    )
+    assert np.allclose(got, expected)
+
+
+def test_scott_bw_method_matches_default(rng):
+    x = rng.normal(size=200)
+    y = rng.normal(size=200)
+    assert np.allclose(kde_at(x, y), kde_at(x, y, bandwidth=bw_method("scott")))
+
+
+@pytest.mark.parametrize("kernel", ["scipy", "gaussian", "epanechnikov"])
+def test_silverman_bw_method_accepted(rng, kernel):
+    x = rng.normal(size=200)
+    y = rng.normal(size=200)
+    density = kde_at(x, y, kernel=kernel, bandwidth=bw_method("silverman"))
+    assert np.all(np.isfinite(density))
+    assert np.all(density > 0)
+
+
+def test_gaussian_absolute_bandwidth_scales_with_data(rng):
+    # Absolute widths are homogeneous: scaling the samples by s and the width
+    # by s leaves the density shape, with mass scaling by s**(-dim).
+    x = rng.normal(size=200)
+    y = rng.normal(size=200)
+    grid = np.linspace(-5, 5, 51)
+    X, Y = np.meshgrid(grid, grid)
+    base = kde_at(x, y, at=(X.ravel(), Y.ravel()), kernel="gaussian", bandwidth=0.5)
+    scaled = kde_at(
+        10 * x,
+        10 * y,
+        at=(10 * X.ravel(), 10 * Y.ravel()),
+        kernel="gaussian",
+        bandwidth=5.0,
+    )
+    assert np.allclose(scaled, base / 100.0)
+
+
+def test_kde_at_custom_bandwidth_method(rng):
+    from lib.density import BandwidthMethod
+
+    class Fixed(BandwidthMethod):
+        def estimate_bandwidth(self, samples, *, weights=None):
+            return np.full(samples.shape[0], 0.25)
+
+    x = rng.normal(size=200)
+    y = rng.normal(size=200)
+    assert np.allclose(
+        kde_at(x, y, kernel="gaussian", bandwidth=Fixed()),
+        kde_at(x, y, kernel="gaussian", bandwidth=0.25),
+    )
+    with pytest.raises(TypeError):
+        kde_at(x, y, kernel="scipy", bandwidth=Fixed())
 
 
 @pytest.mark.parametrize(
@@ -134,7 +218,7 @@ def test_kde_at_rejects_bad_weights(weights):
 
 def test_scipy_1d_density_matches_gaussian_kde(rng):
     x = rng.normal(size=200)
-    got = kde_at(x, method="scipy")
+    got = kde_at(x, kernel="scipy")
     expected = scipy.stats.gaussian_kde(np.vstack([x]))(np.vstack([x]))
     assert np.allclose(got, expected)
 
@@ -142,7 +226,7 @@ def test_scipy_1d_density_matches_gaussian_kde(rng):
 def test_scipy_1d_at_query_matches_gaussian_kde(rng):
     x = rng.normal(size=200)
     qx = rng.normal(size=50)
-    got = kde_at(x, at=qx, method="scipy")
+    got = kde_at(x, at=qx, kernel="scipy")
     expected = scipy.stats.gaussian_kde(np.vstack([x]))(qx)
     assert np.allclose(got, expected)
 
@@ -150,7 +234,7 @@ def test_scipy_1d_at_query_matches_gaussian_kde(rng):
 def test_scipy_1d_weighted_density_matches_gaussian_kde(rng):
     x = rng.normal(size=200)
     weights = rng.uniform(0.1, 2.0, size=200)
-    got = kde_at(x, weights=weights, method="scipy")
+    got = kde_at(x, weights=weights, kernel="scipy")
     expected = scipy.stats.gaussian_kde(np.vstack([x]), weights=weights)(np.vstack([x]))
     assert np.allclose(got, expected)
 
@@ -163,7 +247,7 @@ def test_kde_at_1d_default_evaluates_at_samples(rng):
 def test_kernel_1d_density_integrates_to_one(rng):
     x = rng.normal(size=500)
     grid = np.linspace(-5, 5, 121)
-    density = kde_at(x, at=grid, method="kernel", bandwidth=0.5)
+    density = kde_at(x, at=grid, kernel="gaussian", bandwidth=0.5)
     assert np.isclose(density.sum() * (grid[1] - grid[0]), 1.0, atol=0.05)
 
 
@@ -358,5 +442,16 @@ def test_kde_contour_returns_contourset(rng):
     y = rng.normal(size=300)
     _, ax = plt.subplots()
     contour_set = kde_contour(x, y, levels=[0.5], ax=ax)
+    assert contour_set is not None
+    plt.close(ax.figure)
+
+
+def test_kde_contour_accepts_kernel(rng):
+    x = rng.normal(size=300)
+    y = rng.normal(size=300)
+    _, ax = plt.subplots()
+    contour_set = kde_contour(
+        x, y, levels=[0.5], ax=ax, kernel="epanechnikov", bandwidth=1.0
+    )
     assert contour_set is not None
     plt.close(ax.figure)

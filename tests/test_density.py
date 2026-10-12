@@ -2,10 +2,13 @@ import numpy as np
 import pytest
 
 from lib.density import (
+    BandwidthMethod,
+    bw_method,
     enclosed_thresholds,
     estimate_density,
     make_epanechnikov_kernel,
     make_gaussian_kernel,
+    resolve_bandwidth,
     scalar_epanechnikov_kernel,
     scalar_gaussian_kernel,
 )
@@ -67,6 +70,52 @@ def test_estimate_density_grid_integrates_to_one(rng):
     y = rng.normal(size=500)
     _, _, Z, cell_area = estimate_density(x, y, gridsize=200)
     assert np.isclose(Z.sum() * cell_area, 1.0, atol=0.02)
+
+
+def test_estimate_density_kernel_integrates_to_one(rng):
+    x = rng.normal(size=500)
+    y = rng.normal(size=500)
+    _, _, Z, cell_area = estimate_density(
+        x, y, gridsize=200, kernel="epanechnikov", bandwidth=0.5
+    )
+    assert np.isclose(Z.sum() * cell_area, 1.0, atol=0.05)
+
+
+def test_bw_method_scott_matches_default(rng):
+    data = np.vstack([rng.normal(size=100), rng.normal(size=100)])
+    assert np.allclose(
+        resolve_bandwidth(None, data), resolve_bandwidth(bw_method("scott"), data)
+    )
+    assert isinstance(bw_method("silverman"), BandwidthMethod)
+
+
+def test_bw_method_rejects_bad_values():
+    with pytest.raises(ValueError):
+        bw_method("chu")
+    with pytest.raises(ValueError):
+        bw_method(-1.0)
+
+
+def test_resolve_bandwidth_absolute_is_independent_of_data(rng):
+    data = np.vstack([rng.normal(size=100), rng.normal(size=100)]) * 10
+    assert np.allclose(resolve_bandwidth(0.3, data), 0.3)
+
+
+def test_resolve_bandwidth_rejects_bad_values():
+    data = np.zeros((2, 5))
+    with pytest.raises(ValueError):
+        resolve_bandwidth(0.0, data)
+    with pytest.raises(TypeError):
+        resolve_bandwidth("scott", data)  # must be wrapped in bw_method(...)
+
+
+def test_custom_bandwidth_method(rng):
+    class Fixed(BandwidthMethod):
+        def estimate_bandwidth(self, samples, *, weights=None):
+            return np.full(samples.shape[0], 0.25)
+
+    data = np.vstack([rng.normal(size=50), rng.normal(size=50)])
+    assert np.allclose(resolve_bandwidth(Fixed(), data), 0.25)
 
 
 def test_enclosed_thresholds_rejects_out_of_range_levels():

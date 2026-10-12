@@ -6,10 +6,16 @@ Plotting-oriented density helpers live in `lib.plot.density`.
 
 from __future__ import annotations
 
-from .estimate import enclosed_thresholds, estimate_density
+from .bandwidth import BandwidthMethod, bw_method, resolve_bandwidth
+from .estimate import (
+    enclosed_thresholds,
+    estimate_density,
+    estimate_density_at,
+)
 from .kernels import (
     make_epanechnikov_kernel,
     make_gaussian_kernel,
+    resolve_kernel,
     scalar_epanechnikov_kernel,
     scalar_gaussian_kernel,
 )
@@ -22,8 +28,11 @@ from .regression import (
 )
 
 __all__ = [
+    "BandwidthMethod",
+    "bw_method",
     "enclosed_thresholds",
     "estimate_density",
+    "estimate_density_at",
     "kernel_flux",
     "kernel_regression",
     "kernel_regression_at",
@@ -31,6 +40,8 @@ __all__ = [
     "make_gaussian_kernel",
     "mesh_kernel_flux",
     "mesh_kernel_regression",
+    "resolve_bandwidth",
+    "resolve_kernel",
     "scalar_epanechnikov_kernel",
     "scalar_gaussian_kernel",
 ]

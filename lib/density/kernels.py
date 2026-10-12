@@ -66,3 +66,23 @@ def make_epanechnikov_kernel(dim: int) -> Kernel:
         return norm * np.maximum(0, 1 - np.square(x).sum(-1))
 
     return numba.njit(fn)
+
+
+def resolve_kernel(kernel: str | Kernel, dim: int) -> Kernel:
+    """
+    Return a compiled `dim`-dimensional kernel for a name or callable.
+
+    Recognizes `"gaussian"` and `"epanechnikov"`; callables are returned
+    unchanged. The scipy backend is handled by the caller, not here.
+    """
+    if not isinstance(kernel, str):
+        return kernel
+    factories = {
+        "gaussian": make_gaussian_kernel,
+        "epanechnikov": make_epanechnikov_kernel,
+    }
+    if kernel not in factories:
+        raise ValueError(
+            f"unrecognized kernel {kernel!r}; expected one of {sorted(factories)}"
+        )
+    return factories[kernel](dim)
