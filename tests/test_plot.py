@@ -39,34 +39,97 @@ def test_texsci_plain_value():
 
 
 def test_scipy_density_matches_gaussian_kde(rng):
-    data = rng.normal(size=(200, 1))
-    at = data[:5]
-    got = kde_at(data, at, method="scipy")
-    expected = scipy.stats.gaussian_kde(data.T)(at.T)
+    x = rng.normal(size=200)
+    y = rng.normal(size=200)
+    got = kde_at(x, y, method="scipy")
+    expected = scipy.stats.gaussian_kde(np.vstack([x, y]))(np.vstack([x, y]))
     assert np.allclose(got, expected)
+
+
+def test_scipy_weighted_density_matches_gaussian_kde(rng):
+    x = rng.normal(size=200)
+    y = rng.normal(size=200)
+    weights = rng.uniform(0.1, 2.0, size=200)
+    got = kde_at(x, y, weights=weights, method="scipy")
+    expected = scipy.stats.gaussian_kde(np.vstack([x, y]), weights=weights)(
+        np.vstack([x, y])
+    )
+    assert np.allclose(got, expected)
+
+
+def test_kde_at_weights_change_result(rng):
+    x = rng.normal(size=200)
+    y = rng.normal(size=200)
+    weights = rng.uniform(0.1, 2.0, size=200)
+    unweighted = kde_at(x, y, method="scipy")
+    weighted = kde_at(x, y, weights=weights, method="scipy")
+    assert not np.allclose(unweighted, weighted)
+
+
+def test_kde_at_default_evaluates_at_samples(rng):
+    x = rng.normal(size=100)
+    y = rng.normal(size=100)
+    assert np.allclose(kde_at(x, y), kde_at(x, y, at=(x, y)))
 
 
 def test_kernel_density_integrates_to_one(rng):
     # Regression: the kernel path returned sum(K) without 1/n or 1/prod(h).
-    data = rng.normal(size=(500, 2))
+    x = rng.normal(size=500)
+    y = rng.normal(size=500)
     grid = np.linspace(-5, 5, 121)
     X, Y = np.meshgrid(grid, grid)
-    at = np.column_stack([X.ravel(), Y.ravel()])
-    density = kde_at(data, at, method="kernel", bandwidth=0.5).reshape(X.shape)
+    density = kde_at(
+        x, y, at=(X.ravel(), Y.ravel()), method="kernel", bandwidth=0.5
+    ).reshape(X.shape)
+    cell_area = (grid[1] - grid[0]) ** 2
+    assert np.isclose(density.sum() * cell_area, 1.0, atol=0.05)
+
+
+def test_kernel_weighted_density_integrates_to_one(rng):
+    x = rng.normal(size=500)
+    y = rng.normal(size=500)
+    weights = rng.uniform(0.1, 2.0, size=500)
+    grid = np.linspace(-5, 5, 121)
+    X, Y = np.meshgrid(grid, grid)
+    density = kde_at(
+        x,
+        y,
+        at=(X.ravel(), Y.ravel()),
+        weights=weights,
+        method="kernel",
+        bandwidth=0.5,
+    ).reshape(X.shape)
     cell_area = (grid[1] - grid[0]) ** 2
     assert np.isclose(density.sum() * cell_area, 1.0, atol=0.05)
 
 
 def test_kde_at_rejects_negative_bandwidth(rng):
-    data = rng.normal(size=(50, 2))
+    x = rng.normal(size=50)
+    y = rng.normal(size=50)
     with pytest.raises(ValueError):
-        kde_at(data, method="kernel", bandwidth=-1.0)
+        kde_at(x, y, method="kernel", bandwidth=-1.0)
 
 
 def test_kde_at_rejects_unknown_method(rng):
-    data = rng.normal(size=(50, 2))
+    x = rng.normal(size=50)
+    y = rng.normal(size=50)
     with pytest.raises(ValueError):
-        kde_at(data, method="histogram")
+        kde_at(x, y, method="histogram")
+
+
+@pytest.mark.parametrize(
+    "weights",
+    [
+        np.array([1.0, 2.0]),  # wrong length
+        np.array([1.0, -1.0, 1.0]),  # negative
+        np.zeros(3),  # sums to zero
+    ],
+)
+def test_kde_at_rejects_bad_weights(weights):
+    x = np.array([0.0, 1.0, 2.0])
+    y = np.array([0.0, 1.0, 2.0])
+    with pytest.raises(ValueError):
+        kde_at(x, y, weights=weights)
 
 
 def test_smooth_matrix_preserves_shape():

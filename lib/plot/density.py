@@ -23,16 +23,6 @@ if TYPE_CHECKING:
     import matplotlib.contour
 
 
-def _as_points(x: npt.ArrayLike) -> np.ndarray:
-    """
-    Return `x` as an `(n, d)` float array, promoting 1-D input.
-    """
-    x = np.asarray(x, dtype=float)
-    if x.ndim == 1:
-        x = x[:, None]
-    return x
-
-
 def _resolve_kernel(kernel: str | Kernel, dim: int) -> Kernel:
     """
     Return a compiled `dim`-dimensional kernel for a name or callable.
@@ -51,22 +41,30 @@ def _resolve_kernel(kernel: str | Kernel, dim: int) -> Kernel:
 
 
 def kde_at(
-    data: npt.ArrayLike,
+    x: npt.ArrayLike,
+    y: npt.ArrayLike,
     at: npt.ArrayLike | None = None,
     *,
+    weights: npt.ArrayLike | None = None,
     method: str = "scipy",
     bw_method: str | float | Callable[..., float] | None = None,
     kernel: str | Kernel = "gaussian",
     bandwidth: float | npt.ArrayLike = 1.0,
 ) -> np.ndarray:
     """
-    Evaluate a KDE of `data` at the query points `at`.
+    Evaluate a KDE of the samples `(x, y)`.
 
-    Intended for plotting (e.g. density-colored scatter); no axes are drawn.
+    Intended for plotting (e.g. density-colored scatter); no axes are drawn. By
+    default the density is evaluated at the sample points, so the result can be
+    used directly as a color array.
 
     Parameters:
-    - `data`: `(n, d)` sample coordinates (a 1-D array is treated as `d = 1`).
-    - `at`: `(m, d)` query points; defaults to `data`.
+    - `x`, `y`: sample coordinates (same length).
+    - `at`: optional `(2, m)` query array, or a pair `(qx, qy)` of equal-length
+      arrays; defaults to the samples.
+    - `weights`: optional per-sample weights, same length as `x`. The density is
+      normalized by `sum(weights)`, so it integrates to one; equal weights
+      reproduce the unweighted estimate.
     - `method`: `"scipy"` uses `scipy.stats.gaussian_kde`; `"kernel"` uses this
       package's kernels and the `bandwidth` argument.
     - `bw_method`: passed to `scipy.stats.gaussian_kde` (`"scipy"` only).
@@ -75,9 +73,26 @@ def kde_at(
 
     Returns density values of shape `(m,)`.
     """
-    data = _as_points(data)
-    at = data if at is None else _as_points(at)
-    dim = data.shape[1]
+    x = np.asarray(x, dtype=float).ravel()
+    y = np.asarray(y, dtype=float).ravel()
+    if x.shape != y.shape:
+        raise ValueError("x and y must have the same length")
+    data = np.vstack([x, y])  # (2, n)
+
+    if weights is None:
+        weight_values = np.ones(data.shape[1])
+    else:
+        weight_values = np.asarray(weights, dtype=float).ravel()
+        if weight_values.shape != x.shape:
+            raise ValueError("weights must have the same length as x and y")
+        if not np.all(np.isfinite(weight_values)) or np.any(weight_values < 0):
+            raise ValueError("weights must be finite and non-negative")
+        if weight_values.sum() <= 0:
+            raise ValueError("weights must not sum to zero")
+
+    query = data if at is None else np.asarray(at, dtype=float)
+    if query.ndim != 2 or query.shape[0] != 2:
+        raise ValueError("at must be a (2, m) array or a pair of coordinate arrays")
 
     if method not in {"scipy", "kernel"}:
         raise ValueError(f"unknown method {method!r}; expected 'scipy' or 'kernel'")
@@ -85,23 +100,25 @@ def kde_at(
     if method == "scipy":
         import scipy.stats
 
-        kde = scipy.stats.gaussian_kde(data.T, bw_method=bw_method)
-        return kde(at.T)
+        kde = scipy.stats.gaussian_kde(data, bw_method=bw_method, weights=weight_values)
+        return kde(query)
 
-    if at.shape[1] != dim:
-        raise ValueError("at must have the same number of columns as data")
-    kernel_fn = _resolve_kernel(kernel, dim)
+    kernel_fn = _resolve_kernel(kernel, 2)
     bandwidth = np.asarray(bandwidth, dtype=float)
     if np.any(bandwidth <= 0):
         raise ValueError("bandwidth must be positive")
-    bandwidth = np.broadcast_to(bandwidth, (dim,))
+    bandwidth = np.broadcast_to(bandwidth, (2,))
     scale = 1 / bandwidth
-    # Raw sum of kernel weights, then the KDE normalization constants:
-    # (1 / (n * prod(h))) * sum_i K((x - x_i) / h).
+    # Weighted density: (1 / (sum_i w_i * prod(h))) * sum_i w_i K((q - x_i) / h).
     density = kernel_regression(
-        at, data, np.array(1.0), kernel_fn=kernel_fn, scale=scale, average=False
+        query.T,
+        data.T,
+        weight_values,
+        kernel_fn=kernel_fn,
+        scale=scale,
+        average=False,
     )
-    return density / (data.shape[0] * np.prod(bandwidth))
+    return density / (weight_values.sum() * np.prod(bandwidth))
 
 
 def kde_contour(
