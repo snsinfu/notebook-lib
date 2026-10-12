@@ -3,6 +3,7 @@ import subprocess
 import sys
 
 import matplotlib
+import matplotlib.colors
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -16,6 +17,7 @@ from lib.plot import (
     kde_contour,
     register_colormaps,
     set_axis,
+    slice_cmap,
     smooth_matrix,
     texsci,
     use_log_ticks,
@@ -179,6 +181,58 @@ def test_register_colormaps_registers_names():
     register_colormaps()
     assert "wrr" in matplotlib.colormaps
     assert "bkr" in matplotlib.colormaps
+
+
+def test_slice_cmap_trims_linear_colormap():
+    # `viridis` is a ListedColormap in matplotlib 3.11; use a segmented map.
+    cmap = matplotlib.colormaps["bwr"]
+    sliced = slice_cmap(cmap, 0.1, 0.9)
+    assert isinstance(sliced, matplotlib.colors.LinearSegmentedColormap)
+    assert sliced.name == "bwr_sliced"
+    assert np.allclose(sliced(0.0), cmap(0.1))
+    assert np.allclose(sliced(1.0), cmap(0.9))
+    assert not np.allclose(sliced(0.0), cmap(0.0))
+
+
+def test_slice_cmap_preserves_listed_type():
+    colors = [
+        "red",
+        "orange",
+        "yellow",
+        "green",
+        "blue",
+        "purple",
+        "brown",
+        "pink",
+        "gray",
+        "black",
+    ]
+    cmap = matplotlib.colors.ListedColormap(colors)
+    sliced = slice_cmap(cmap, 0.1, 0.9)
+    assert isinstance(sliced, matplotlib.colors.ListedColormap)
+    assert sliced.N == 8
+    assert list(sliced.colors) == list(cmap.colors)[1:9]
+
+
+def test_slice_cmap_listed_rounds_trim_counts():
+    # 7 colors: round(0.1 * 7) == round(0.7) == 1 trimmed from each end.
+    cmap = matplotlib.colors.ListedColormap(
+        ["red", "orange", "yellow", "green", "blue", "purple", "black"]
+    )
+    sliced = slice_cmap(cmap, 0.1, 0.9)
+    assert sliced.N == 5
+    assert list(sliced.colors) == list(cmap.colors)[1:6]
+
+
+def test_slice_cmap_custom_name():
+    sliced = slice_cmap(matplotlib.colormaps["viridis"], 0.0, 1.0, name="mine")
+    assert sliced.name == "mine"
+
+
+@pytest.mark.parametrize("lo,hi", [(0.9, 0.1), (-0.1, 0.5), (0.5, 1.1), (0.5, 0.5)])
+def test_slice_cmap_rejects_invalid_range(lo, hi):
+    with pytest.raises(ValueError):
+        slice_cmap(matplotlib.colormaps["viridis"], lo, hi)
 
 
 def test_kde_contour_returns_contourset(rng):
