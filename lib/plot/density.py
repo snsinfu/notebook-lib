@@ -42,9 +42,9 @@ def _resolve_kernel(kernel: str | Kernel, dim: int) -> Kernel:
 
 def kde_at(
     x: npt.ArrayLike,
-    y: npt.ArrayLike,
-    at: npt.ArrayLike | None = None,
+    y: npt.ArrayLike | None = None,
     *,
+    at: npt.ArrayLike | None = None,
     weights: npt.ArrayLike | None = None,
     method: str = "scipy",
     bw_method: str | float | Callable[..., float] | None = None,
@@ -52,16 +52,20 @@ def kde_at(
     bandwidth: float | npt.ArrayLike = 1.0,
 ) -> np.ndarray:
     """
-    Evaluate a KDE of the samples `(x, y)`.
+    Evaluate a 1-D or 2-D KDE.
 
-    Intended for plotting (e.g. density-colored scatter); no axes are drawn. By
-    default the density is evaluated at the sample points, so the result can be
-    used directly as a color array.
+    Intended for plotting (e.g. density-colored scatter or line); no axes are
+    drawn. By default the density is evaluated at the sample points, so the
+    result can be used directly as a color array.
 
     Parameters:
-    - `x`, `y`: sample coordinates (same length).
-    - `at`: optional `(2, m)` query array, or a pair `(qx, qy)` of equal-length
-      arrays; defaults to the samples.
+    - `x`: sample coordinates for the first (only) axis.
+    - `y`: optional sample coordinates for the second axis; omit it (or pass
+      `None`) for a 1-D estimate.
+    - `at`: optional query points; defaults to the samples. For a 1-D estimate a
+      flat array of query coordinates; for a 2-D estimate a `(2, m)` array or a
+      pair `(qx, qy)` of equal-length arrays. Keyword-only because its meaning
+      depends on whether `y` is given.
     - `weights`: optional per-sample weights, same length as `x`. The density is
       normalized by `sum(weights)`, so it integrates to one; equal weights
       reproduce the unweighted estimate.
@@ -73,26 +77,40 @@ def kde_at(
 
     Returns density values of shape `(m,)`.
     """
-    x = np.asarray(x, dtype=float).ravel()
-    y = np.asarray(y, dtype=float).ravel()
-    if x.shape != y.shape:
-        raise ValueError("x and y must have the same length")
-    data = np.vstack([x, y])  # (2, n)
+    x_values = np.asarray(x, dtype=float).ravel()
+    if y is None:
+        dim = 1
+        data = x_values[None, :]  # (1, n)
+    else:
+        y_values = np.asarray(y, dtype=float).ravel()
+        if x_values.shape != y_values.shape:
+            raise ValueError("x and y must have the same length")
+        dim = 2
+        data = np.vstack([x_values, y_values])  # (2, n)
 
     if weights is None:
         weight_values = np.ones(data.shape[1])
     else:
         weight_values = np.asarray(weights, dtype=float).ravel()
-        if weight_values.shape != x.shape:
-            raise ValueError("weights must have the same length as x and y")
+        if weight_values.shape != x_values.shape:
+            raise ValueError("weights must have the same length as the samples")
         if not np.all(np.isfinite(weight_values)) or np.any(weight_values < 0):
             raise ValueError("weights must be finite and non-negative")
         if weight_values.sum() <= 0:
             raise ValueError("weights must not sum to zero")
 
-    query = data if at is None else np.asarray(at, dtype=float)
-    if query.ndim != 2 or query.shape[0] != 2:
-        raise ValueError("at must be a (2, m) array or a pair of coordinate arrays")
+    if at is None:
+        query = data
+    else:
+        query = np.asarray(at, dtype=float)
+        if dim == 1:
+            if query.ndim != 1:
+                raise ValueError(
+                    "at must be a 1-D array of query points when y is omitted"
+                )
+            query = query[None, :]  # (1, m)
+        elif query.ndim != 2 or query.shape[0] != dim:
+            raise ValueError("at must be a (2, m) array or a pair of coordinate arrays")
 
     if method not in {"scipy", "kernel"}:
         raise ValueError(f"unknown method {method!r}; expected 'scipy' or 'kernel'")
@@ -103,11 +121,11 @@ def kde_at(
         kde = scipy.stats.gaussian_kde(data, bw_method=bw_method, weights=weight_values)
         return kde(query)
 
-    kernel_fn = _resolve_kernel(kernel, 2)
+    kernel_fn = _resolve_kernel(kernel, dim)
     bandwidth = np.asarray(bandwidth, dtype=float)
     if np.any(bandwidth <= 0):
         raise ValueError("bandwidth must be positive")
-    bandwidth = np.broadcast_to(bandwidth, (2,))
+    bandwidth = np.broadcast_to(bandwidth, (dim,))
     scale = 1 / bandwidth
     # Weighted density: (1 / (sum_i w_i * prod(h))) * sum_i w_i K((q - x_i) / h).
     density = kernel_regression(

@@ -132,6 +132,61 @@ def test_kde_at_rejects_bad_weights(weights):
         kde_at(x, y, weights=weights)
 
 
+def test_scipy_1d_density_matches_gaussian_kde(rng):
+    x = rng.normal(size=200)
+    got = kde_at(x, method="scipy")
+    expected = scipy.stats.gaussian_kde(np.vstack([x]))(np.vstack([x]))
+    assert np.allclose(got, expected)
+
+
+def test_scipy_1d_at_query_matches_gaussian_kde(rng):
+    x = rng.normal(size=200)
+    qx = rng.normal(size=50)
+    got = kde_at(x, at=qx, method="scipy")
+    expected = scipy.stats.gaussian_kde(np.vstack([x]))(qx)
+    assert np.allclose(got, expected)
+
+
+def test_scipy_1d_weighted_density_matches_gaussian_kde(rng):
+    x = rng.normal(size=200)
+    weights = rng.uniform(0.1, 2.0, size=200)
+    got = kde_at(x, weights=weights, method="scipy")
+    expected = scipy.stats.gaussian_kde(np.vstack([x]), weights=weights)(np.vstack([x]))
+    assert np.allclose(got, expected)
+
+
+def test_kde_at_1d_default_evaluates_at_samples(rng):
+    x = rng.normal(size=100)
+    assert np.allclose(kde_at(x), kde_at(x, at=x))
+
+
+def test_kernel_1d_density_integrates_to_one(rng):
+    x = rng.normal(size=500)
+    grid = np.linspace(-5, 5, 121)
+    density = kde_at(x, at=grid, method="kernel", bandwidth=0.5)
+    assert np.isclose(density.sum() * (grid[1] - grid[0]), 1.0, atol=0.05)
+
+
+def test_kde_at_1d_rejects_2d_at(rng):
+    x = rng.normal(size=50)
+    with pytest.raises(ValueError):
+        kde_at(x, at=(x, x))
+
+
+def test_kde_at_2d_rejects_flat_at(rng):
+    x = rng.normal(size=50)
+    y = rng.normal(size=50)
+    with pytest.raises(ValueError):
+        kde_at(x, y, at=x)
+
+
+def test_kde_at_at_is_keyword_only(rng):
+    x = rng.normal(size=50)
+    y = rng.normal(size=50)
+    with pytest.raises(TypeError):
+        kde_at(x, y, x)
+
+
 def test_smooth_matrix_preserves_shape():
     matrix = np.zeros((20, 20))
     matrix[10, 10] = 1.0
