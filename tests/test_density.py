@@ -6,6 +6,7 @@ from lib.density import (
     bw_method,
     enclosed_thresholds,
     estimate_conditional_density_mesh,
+    estimate_conditional_ridge,
     estimate_density_mesh,
     make_epanechnikov_kernel,
     make_gaussian_kernel,
@@ -190,3 +191,120 @@ def test_estimate_conditional_density_mesh_rejects_bad_given(rng):
     y = rng.normal(size=50)
     with pytest.raises(ValueError):
         estimate_conditional_density_mesh(x, y, given="z")
+
+
+def test_estimate_conditional_ridge_aux_shapes(rng):
+    y = rng.normal(size=500)
+    x = 0.8 * y + 0.4 * rng.normal(size=500)
+    ridge_x, ridge_y, aux = estimate_conditional_ridge(x, y, gridsize=64)
+    assert ridge_x.shape == ridge_y.shape == (64,)
+    assert aux.support.shape == aux.ambiguous.shape == aux.n_modes.shape == (64,)
+    assert aux.contrast.shape == (64,)
+    assert aux.n_modes.dtype.kind in "iu"
+    assert np.all(np.isfinite(aux.contrast))
+
+
+def test_estimate_conditional_ridge_recovers_linear(rng):
+    y = rng.normal(size=3000)
+    x = 0.8 * y + 0.4 * rng.normal(size=3000)
+    ridge_x, ridge_y, aux = estimate_conditional_ridge(
+        x, y, kernel="gaussian", bandwidth=0.15, gridsize=100
+    )
+    # Mask is off by default: a line is returned at every conditioning value.
+    assert np.all(np.isfinite(ridge_x))
+    assert np.nanmedian(np.abs(ridge_x - 0.8 * ridge_y)) < 2 * 0.15
+    assert np.median(aux.contrast) > 0.8
+    assert np.corrcoef(ridge_x, ridge_y)[0, 1] > 0.99
+
+
+def test_estimate_conditional_ridge_given_x(rng):
+    y = rng.normal(size=3000)
+    x = 0.8 * y + 0.4 * rng.normal(size=3000)
+    ridge_x, ridge_y, _ = estimate_conditional_ridge(
+        x, y, given="x", kernel="gaussian", bandwidth=0.15, gridsize=100
+    )
+    # For given="x" the conditioning coordinate is the x grid, and the traced
+    # coordinate is y ~ x / 0.8.
+    assert np.all(np.diff(ridge_x) > 0)
+    assert np.all(np.isfinite(ridge_y))
+    assert np.corrcoef(ridge_x, ridge_y)[0, 1] > 0.99
+
+
+def test_estimate_conditional_ridge_branch_traces_one_branch(rng):
+    y = rng.uniform(-2, 2, 3000)
+    side = rng.integers(0, 2, 3000) * 2.0 - 1.0
+    x = side * (0.5 + 0.6 * np.abs(y)) + 0.3 * rng.normal(size=3000)
+    ridge_x, _, aux = estimate_conditional_ridge(
+        x, y, kernel="gaussian", bandwidth=0.15, gridsize=100
+    )
+    assert np.all(np.isfinite(ridge_x))
+    assert aux.ambiguous.mean() > 0.5
+    # The trace follows one branch, so consecutive steps stay small.
+    assert np.max(np.abs(np.diff(ridge_x))) < 0.6
+
+
+def test_estimate_conditional_ridge_flat_is_not_masked(rng):
+    y = rng.normal(size=3000)
+    x = rng.uniform(-3, 3, 3000)
+    ridge_x, _, aux = estimate_conditional_ridge(
+        x, y, kernel="gaussian", bandwidth=0.15, gridsize=100
+    )
+    # A flat slice is not dropped; it is returned with a low contrast.
+    assert np.all(np.isfinite(ridge_x))
+    assert np.median(aux.contrast) < 0.8
+
+
+def test_estimate_conditional_ridge_low_support_masked(rng):
+    y = rng.normal(size=3000)
+    x = rng.uniform(-3, 3, 3000)
+    _, _, aux = estimate_conditional_ridge(x, y, kernel="gaussian", bandwidth=0.15)
+    assert aux.support.all()
+
+    ridge_x, _, masked = estimate_conditional_ridge(
+        x, y, kernel="gaussian", bandwidth=0.15, min_density=0.5
+    )
+    assert masked.support.mean() < 1.0
+    assert np.isnan(ridge_x[~masked.support]).all()
+    assert np.isfinite(ridge_x[masked.support]).all()
+
+
+def test_estimate_conditional_ridge_ambiguous_policy(rng):
+    y = rng.uniform(-2, 2, 3000)
+    side = rng.integers(0, 2, 3000) * 2.0 - 1.0
+    x = side * (0.5 + 0.6 * np.abs(y)) + 0.3 * rng.normal(size=3000)
+    _, _, aux = estimate_conditional_ridge(x, y, kernel="gaussian", bandwidth=0.15)
+    assert aux.ambiguous.any()
+
+    ridge_nan, _, _ = estimate_conditional_ridge(
+        x, y, kernel="gaussian", bandwidth=0.15, on_ambiguous="nan"
+    )
+    assert np.isnan(ridge_nan[aux.ambiguous]).all()
+    assert np.isfinite(ridge_nan[~aux.ambiguous]).all()
+
+    with pytest.raises(ValueError):
+        estimate_conditional_ridge(
+            x, y, kernel="gaussian", bandwidth=0.15, on_ambiguous="raise"
+        )
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"given": "z"},
+        {"min_density": 1.0},
+        {"min_prominence": 1.5},
+        {"min_separation": -1.0},
+        {"jump_penalty": -1.0},
+        {"on_ambiguous": "wrong"},
+    ],
+)
+def test_estimate_conditional_ridge_rejects_bad_args(rng, kwargs):
+    x = rng.normal(size=50)
+    y = rng.normal(size=50)
+    with pytest.raises(ValueError):
+        estimate_conditional_ridge(x, y, **kwargs)
+
+
+def test_estimate_conditional_ridge_rejects_length_mismatch(rng):
+    with pytest.raises(ValueError):
+        estimate_conditional_ridge(rng.normal(size=10), rng.normal(size=11))
