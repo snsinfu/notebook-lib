@@ -236,7 +236,7 @@ def _marginal_density(
         weight_values = np.ones(samples.size)
     else:
         weight_values = weights
-    scaled = (np.asarray(at, float)[:, None] - samples[None, :]) / width
+    scaled = (at[:, None] - samples[None, :]) / width
     return (scalar(scaled) * weight_values[None, :]).sum(1) / (
         weight_values.sum() * width
     )
@@ -444,16 +444,12 @@ def estimate_conditional_ridge(
         raise ValueError("given must be 'x' or 'y'")
     if on_ambiguous not in {"dominant", "nan", "raise"}:
         raise ValueError("on_ambiguous must be 'dominant', 'nan', or 'raise'")
-    min_density = float(min_density)
     if not np.isfinite(min_density) or min_density < 0 or min_density >= 1:
         raise ValueError("min_density must be a fraction in [0, 1)")
-    min_prominence = float(min_prominence)
     if not np.isfinite(min_prominence) or not 0 <= min_prominence <= 1:
         raise ValueError("min_prominence must be a fraction in [0, 1]")
-    min_separation = float(min_separation)
     if not np.isfinite(min_separation) or min_separation < 0:
         raise ValueError("min_separation must be non-negative")
-    jump_penalty = float(jump_penalty)
     if not np.isfinite(jump_penalty) or jump_penalty < 0:
         raise ValueError("jump_penalty must be non-negative")
 
@@ -498,7 +494,7 @@ def estimate_conditional_ridge(
         )
 
     path = _trace_ridge(field, jump_penalty)
-    ridge_max = np.asarray(max_coord, dtype=float)[path]
+    ridge_max = max_coord[path]
 
     ambiguous = n_modes >= 2
     ridge_max = np.where(support, ridge_max, np.nan)
@@ -511,10 +507,9 @@ def estimate_conditional_ridge(
         )
 
     aux = ConditionalRidgeAux(support, ambiguous, n_modes, contrast)
-    cond_values = np.asarray(cond_coord, dtype=float)
     if given == "y":
-        return ridge_max, cond_values, aux
-    return cond_values, ridge_max, aux
+        return ridge_max, cond_coord, aux
+    return cond_coord, ridge_max, aux
 
 
 def enclosed_thresholds(

@@ -81,8 +81,8 @@ class StatisticalLinearRegression:
         self.coef_dof: int = coef_dof
         self.coef_pvalue: np.ndarray = coef_pvalue
         self.sse: float = sse
-        self.mse: float = float(mse)
-        self.R2: float = float(R2)
+        self.mse: float = mse
+        self.R2: float = R2
 
     def predict(self, X: npt.ArrayLike) -> tuple[np.ndarray, np.ndarray]:
         """

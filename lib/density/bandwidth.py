@@ -70,7 +70,7 @@ class _RelativeStd(BandwidthMethod):
     def __init__(self, factor: float) -> None:
         if not np.isfinite(factor) or factor <= 0:
             raise ValueError("relative bandwidth must be finite and positive")
-        self.factor = float(factor)
+        self.factor = factor
 
     def estimate_bandwidth(
         self, samples: npt.ArrayLike, *, weights: npt.ArrayLike | None = None
@@ -169,7 +169,7 @@ def resolve_bandwidth(
         widths = np.broadcast_to(np.asarray(bandwidth, dtype=float), (dim,))
         if not np.all(np.isfinite(widths)) or np.any(widths <= 0):
             raise ValueError("bandwidth must be finite and positive")
-        return np.array(widths, dtype=float)
+        return np.array(widths)
 
     weight_values = (
         None if weights is None else np.asarray(weights, dtype=float).ravel()
