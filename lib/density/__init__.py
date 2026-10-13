@@ -9,6 +9,7 @@ from __future__ import annotations
 from .bandwidth import BandwidthMethod, bw_method, resolve_bandwidth
 from .estimate import (
     enclosed_thresholds,
+    estimate_conditional_density,
     estimate_density,
     estimate_density_at,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "BandwidthMethod",
     "bw_method",
     "enclosed_thresholds",
+    "estimate_conditional_density",
     "estimate_density",
     "estimate_density_at",
     "kernel_flux",

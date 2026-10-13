@@ -12,8 +12,18 @@ import numpy.typing as npt
 import scipy.stats
 
 from .bandwidth import BandwidthMethod, resolve_bandwidth, scipy_bandwidth
-from .kernels import Kernel, resolve_kernel
+from .kernels import (
+    Kernel,
+    resolve_kernel,
+    scalar_epanechnikov_kernel,
+    scalar_gaussian_kernel,
+)
 from .regression import kernel_regression
+
+_SCALAR_KERNELS = {
+    "gaussian": scalar_gaussian_kernel,
+    "epanechnikov": scalar_epanechnikov_kernel,
+}
 
 
 def _check_weights(weights: npt.ArrayLike | None, n: int) -> np.ndarray | None:
@@ -81,31 +91,24 @@ def estimate_density_at(
     return density / (collected.sum() * np.prod(widths))
 
 
-def estimate_density(
-    x: npt.ArrayLike,
-    y: npt.ArrayLike,
+def _joint_density(
+    data: np.ndarray,
     *,
-    gridsize: int = 200,
-    cut: float = 3.0,
-    weights: npt.ArrayLike | None = None,
-    kernel: str | Kernel = "scipy",
-    bandwidth: float | npt.ArrayLike | BandwidthMethod | None = None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    gridsize: int,
+    cut: float,
+    weights: npt.ArrayLike | None,
+    kernel: str | Kernel,
+    bandwidth: float | npt.ArrayLike | BandwidthMethod | None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, float, np.ndarray, np.ndarray | None]:
     """
-    Evaluate a 2-D KDE of `(x, y)` on a regular grid.
+    Evaluate a 2-D KDE on a regular grid of `data` of shape `(2, n)`.
 
-    Parameters:
-    - `x`, `y`: sample coordinates (same length).
-    - `gridsize`: number of grid points along each dimension.
-    - `cut`: grid padding, in bandwidths, beyond the data range.
-    - `weights`: optional per-sample weights.
-    - `kernel`: `"scipy"`, an in-library kernel name, or a callable.
-    - `bandwidth`: absolute width, `None` (Scott's rule), or `bw_method(...)`.
-
-    Returns `(X, Y, Z, cell_area)`: meshgrid coordinates, the density at each
-    grid point, and the area of one grid cell for integrating the density.
+    Shared by `estimate_density` and `estimate_conditional_density`. Returns
+    `(X, Y, Z, cell_area, width, weight_values)`: the meshgrid coordinates, the
+    density, the area of one grid cell, the per-axis bandwidth, and the
+    validated weights. `width` is resolved from the 2-D data, so heuristics use
+    the 2-D Scott/Silverman factor.
     """
-    data = np.vstack([np.asarray(x, float).ravel(), np.asarray(y, float).ravel()])
     if data.shape[1] < 2:
         raise ValueError("need at least two samples to fit a KDE")
     if gridsize < 2:
@@ -136,7 +139,138 @@ def estimate_density(
         bandwidth=bandwidth,
     ).reshape(X.shape)
     cell_area = (gx[1] - gx[0]) * (gy[1] - gy[0])
-    return X, Y, Z, float(cell_area)
+    return X, Y, Z, float(cell_area), width, weight_values
+
+
+def estimate_density(
+    x: npt.ArrayLike,
+    y: npt.ArrayLike,
+    *,
+    gridsize: int = 200,
+    cut: float = 3.0,
+    weights: npt.ArrayLike | None = None,
+    kernel: str | Kernel = "scipy",
+    bandwidth: float | npt.ArrayLike | BandwidthMethod | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    """
+    Evaluate a 2-D KDE of `(x, y)` on a regular grid.
+
+    Parameters:
+    - `x`, `y`: sample coordinates (same length).
+    - `gridsize`: number of grid points along each dimension.
+    - `cut`: grid padding, in bandwidths, beyond the data range.
+    - `weights`: optional per-sample weights.
+    - `kernel`: `"scipy"`, an in-library kernel name, or a callable.
+    - `bandwidth`: absolute width, `None` (Scott's rule), or `bw_method(...)`.
+
+    Returns `(X, Y, Z, cell_area)`: meshgrid coordinates, the density at each
+    grid point, and the area of one grid cell for integrating the density.
+    """
+    data = np.vstack([np.asarray(x, float).ravel(), np.asarray(y, float).ravel()])
+    X, Y, Z, cell_area, _, _ = _joint_density(
+        data,
+        gridsize=gridsize,
+        cut=cut,
+        weights=weights,
+        kernel=kernel,
+        bandwidth=bandwidth,
+    )
+    return X, Y, Z, cell_area
+
+
+def _marginal_density(
+    samples: np.ndarray,
+    at: np.ndarray,
+    *,
+    kernel: str,
+    width: float,
+    weights: np.ndarray | None,
+) -> np.ndarray:
+    """
+    Evaluate a 1-D KDE of `samples` at `at` with an absolute `width`.
+
+    `kernel` is a name (`"scipy"` uses the Gaussian kernel). The result uses
+    the same kernel and width as the parent joint estimate, so it is the exact
+    marginal of a product-kernel estimate (or of scipy's Gaussian mixture).
+    """
+    scalar = scalar_gaussian_kernel if kernel == "scipy" else _SCALAR_KERNELS[kernel]
+    if weights is None:
+        weight_values = np.ones(samples.size)
+    else:
+        weight_values = weights
+    scaled = (np.asarray(at, float)[:, None] - samples[None, :]) / width
+    return (scalar(scaled) * weight_values[None, :]).sum(1) / (
+        weight_values.sum() * width
+    )
+
+
+def estimate_conditional_density(
+    x: npt.ArrayLike,
+    y: npt.ArrayLike,
+    *,
+    given: str = "y",
+    gridsize: int = 200,
+    cut: float = 3.0,
+    weights: npt.ArrayLike | None = None,
+    kernel: str = "scipy",
+    bandwidth: float | npt.ArrayLike | BandwidthMethod | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    """
+    Evaluate the conditional density f(x|y) or f(y|x) on a regular grid.
+
+    `given="y"` returns f(x|y) = f(x,y)/f(y); `given="x"` returns f(y|x). The
+    marginal is evaluated with the same kernel and bandwidth as the joint, so
+    each slice integrates to one over the varying axis (up to grid truncation).
+
+    The result is the raw ratio, not renormalized; `lib.plot.density` draws its
+    levels as tail mass of the plotted field. Only the named kernels are
+    supported: a general callable has no defined 1-D product marginal.
+
+    Parameters:
+    - `x`, `y`: sample coordinates (same length).
+    - `given`: `"y"` for f(x|y), `"x"` for f(y|x).
+    - `gridsize`, `cut`: as in `estimate_density`.
+    - `weights`: optional per-sample weights.
+    - `kernel`: `"scipy"`, `"gaussian"`, or `"epanechnikov"`.
+    - `bandwidth`: absolute width, `None` (Scott's rule), or `bw_method(...)`.
+
+    Returns `(X, Y, Z, cell_area)`.
+    """
+    x_values = np.asarray(x, float).ravel()
+    y_values = np.asarray(y, float).ravel()
+    if x_values.shape != y_values.shape:
+        raise ValueError("x and y must have the same length")
+    if given not in {"x", "y"}:
+        raise ValueError("given must be 'x' or 'y'")
+    if kernel not in {"scipy", "gaussian", "epanechnikov"}:
+        raise TypeError(
+            "conditional density requires kernel='scipy', 'gaussian', or 'epanechnikov'"
+        )
+
+    data = np.vstack([x_values, y_values])
+    X, Y, Z, cell_area, width, weight_values = _joint_density(
+        data,
+        gridsize=gridsize,
+        cut=cut,
+        weights=weights,
+        kernel=kernel,
+        bandwidth=bandwidth,
+    )
+
+    gx, gy = X[0, :], Y[:, 0]
+    if given == "y":
+        denom = _marginal_density(
+            y_values, gy, kernel=kernel, width=width[1], weights=weight_values
+        )[:, None]
+    else:
+        denom = _marginal_density(
+            x_values, gx, kernel=kernel, width=width[0], weights=weight_values
+        )[None, :]
+
+    # Compact-support kernels (Epanechnikov) have a zero marginal outside the
+    # sample support; Z/inf -> 0 there instead of 0/0 -> nan.
+    Z = Z / np.where(denom > 0, denom, np.inf)
+    return X, Y, Z, cell_area
 
 
 def enclosed_thresholds(

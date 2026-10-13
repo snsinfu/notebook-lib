@@ -5,6 +5,7 @@ from lib.density import (
     BandwidthMethod,
     bw_method,
     enclosed_thresholds,
+    estimate_conditional_density,
     estimate_density,
     make_epanechnikov_kernel,
     make_gaussian_kernel,
@@ -129,3 +130,46 @@ def test_enclosed_thresholds_ordering():
     Z = np.linspace(0, 1, 100).reshape(10, 10)
     thresholds = enclosed_thresholds(Z, 0.01, [0.25, 0.75])
     assert thresholds[1] > thresholds[0]
+
+
+@pytest.mark.parametrize("given", ["x", "y"])
+def test_estimate_conditional_density_slices_integrate_to_one(rng, given):
+    # f(x|y) integrates to one over x (and f(y|x) over y) when the marginal
+    # shares the joint's bandwidth. Check the central slices away from the grid
+    # padding where the truncated window still captures the mass.
+    y = rng.normal(size=1000)
+    x = 0.8 * y + rng.normal(size=1000)
+    X, Y, Z, _ = estimate_conditional_density(x, y, given=given, gridsize=200)
+    if given == "y":
+        integrals = Z.sum(axis=1) * (X[0, 1] - X[0, 0])
+    else:
+        integrals = Z.sum(axis=0) * (Y[1, 0] - Y[0, 0])
+    core = integrals[50:150]
+    assert np.allclose(core, 1.0, atol=0.05)
+
+
+@pytest.mark.parametrize("given", ["x", "y"])
+def test_estimate_conditional_density_compact_kernel_is_finite(rng, given):
+    # Epanechnikov has bounded support; the zero-marginal region must not
+    # produce nan/inf in the ratio.
+    y = rng.normal(size=1000)
+    x = 0.8 * y + rng.normal(size=1000)
+    _, _, Z, _ = estimate_conditional_density(
+        x, y, given=given, kernel="epanechnikov", bandwidth=0.5
+    )
+    assert np.all(np.isfinite(Z))
+    assert np.all(Z >= 0)
+
+
+def test_estimate_conditional_density_rejects_callable_kernel(rng):
+    x = rng.normal(size=50)
+    y = rng.normal(size=50)
+    with pytest.raises(TypeError):
+        estimate_conditional_density(x, y, kernel=lambda points: points)
+
+
+def test_estimate_conditional_density_rejects_bad_given(rng):
+    x = rng.normal(size=50)
+    y = rng.normal(size=50)
+    with pytest.raises(ValueError):
+        estimate_conditional_density(x, y, given="z")
