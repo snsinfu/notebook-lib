@@ -95,6 +95,39 @@ def kde_at(
     )
 
 
+def _check_min_density(value: float) -> float:
+    """
+    Validate a relative `min_density` and return it as a float.
+
+    The value is the fraction of the peak joint density below which cells are
+    masked, so it must lie in `[0, 1)`.
+    """
+    if isinstance(value, bool) or not isinstance(
+        value, (int, float, np.integer, np.floating)
+    ):
+        raise TypeError("min_density must be a number")
+    value = float(value)
+    if not np.isfinite(value) or value < 0 or value >= 1:
+        raise ValueError("min_density must be a fraction in [0, 1)")
+    return value
+
+
+def _suppress_low_density(
+    Z: np.ndarray, joint: np.ndarray, min_density: float
+) -> np.ndarray:
+    """
+    Set `Z` to `NaN` where the joint density is below `min_density * max(joint)`.
+
+    `min_density` is relative to the peak joint density, `0` disables the mask.
+    The result is the display field; callers compute contour thresholds from `Z`
+    *before* masking so the levels do not move.
+    """
+    if min_density <= 0:
+        return Z
+    cut = min_density * float(np.max(joint))
+    return np.where(joint < cut, np.nan, Z)
+
+
 def _density_contour(
     X: npt.ArrayLike,
     Y: npt.ArrayLike,
@@ -103,6 +136,7 @@ def _density_contour(
     ax: matplotlib.axes.Axes | None = None,
     *,
     aux: DensityMeshAux,
+    min_density: float = 0.0,
     fill: bool = False,
     **contour_kwargs: Any,
 ) -> matplotlib.contour.ContourSet:
@@ -124,6 +158,10 @@ def _density_contour(
     - `ax`: axes to draw into; the current axes is used if omitted.
     - `aux`: grid metadata from a mesh estimator; `aux.cell_area` integrates
       `Z` and `aux.joint` is the joint density `p(x, y)` on the same mesh.
+    - `min_density`: fraction of the peak joint density below which cells are set
+      to `NaN` (a support/reliability filter for sparse regions); `0` (default)
+      disables it. Thresholds are computed before masking, so `levels` is
+      unchanged.
     - `fill`: draw filled contours (`contourf`) instead of lines.
     - `contour_kwargs`: forwarded to `Axes.contour` / `Axes.contourf`.
 
@@ -136,6 +174,7 @@ def _density_contour(
         raise ValueError("X, Y and Z must have the same shape")
     if aux.joint.shape != Z.shape:
         raise ValueError("aux.joint must have the same shape as Z")
+    _check_min_density(min_density)
 
     if ax is None:
         import matplotlib.pyplot as plt
@@ -143,6 +182,7 @@ def _density_contour(
         ax = plt.gca()
 
     thresholds = np.unique(enclosed_thresholds(Z, aux.cell_area, levels))
+    Z = _suppress_low_density(Z, aux.joint, min_density)
     draw = ax.contourf if fill else ax.contour
     return draw(X, Y, Z, levels=np.sort(thresholds), **contour_kwargs)
 
@@ -159,6 +199,7 @@ def kde_contour(
     weights: npt.ArrayLike | None = None,
     kernel: str | Kernel = "scipy",
     bandwidth: float | npt.ArrayLike | BandwidthMethod | None = None,
+    min_density: float = 0.0,
     fill: bool = False,
     **contour_kwargs: Any,
 ) -> matplotlib.contour.ContourSet:
@@ -178,6 +219,11 @@ def kde_contour(
     - `weights`: optional per-sample weights.
     - `kernel`: `"scipy"`, an in-library kernel name, or a callable.
     - `bandwidth`: absolute width, `None` (Scott's rule), or `bw_method(...)`.
+    - `min_density`: fraction of the peak joint density `p(x,y)` below which the
+      field is set to `NaN`. This is a support/reliability filter for sparse
+      regions (for example, spurious conditional peaks where the conditioning
+      variable has little data); it applies to both modes. `0` (default)
+      disables it, and it does not change the meaning of `levels`.
     - `fill`: draw filled contours (`contourf`) instead of lines.
     - `contour_kwargs`: forwarded to `Axes.contour` / `Axes.contourf`.
 
@@ -213,6 +259,7 @@ def kde_contour(
         levels=levels,
         ax=ax,
         aux=aux,
+        min_density=min_density,
         fill=fill,
         **contour_kwargs,
     )

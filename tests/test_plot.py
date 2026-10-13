@@ -24,7 +24,7 @@ from lib.plot import (
     texsci,
     use_log_ticks,
 )
-from lib.plot.density import _density_contour
+from lib.plot.density import _density_contour, _suppress_low_density
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -488,6 +488,42 @@ def test_density_contour_rejects_mismatched_shapes():
         _density_contour(X, Y, Z, levels=[0.5], aux=aux)
 
 
+def test_suppress_low_density_is_noop_at_zero():
+    Z = np.arange(9.0).reshape(3, 3)
+    joint = Z.copy()
+    assert _suppress_low_density(Z, joint, 0.0) is Z
+
+
+def test_suppress_low_density_masks_below_relative_cut():
+    Z = np.ones((3, 3))
+    joint = np.arange(9.0).reshape(3, 3)
+    out = _suppress_low_density(Z, joint, 0.5)  # cut = 0.5 * 8 = 4.0
+    assert np.all(np.isnan(out[joint < 4.0]))
+    assert not np.any(np.isnan(out[joint >= 4.0]))
+
+
+def test_density_contour_min_density_preserves_levels(rng):
+    x = rng.normal(size=300)
+    y = rng.normal(size=300)
+    X, Y, Z, aux = estimate_density_mesh(x, y)
+    _, ax = plt.subplots()
+    base = _density_contour(X, Y, Z, levels=[0.5], ax=ax, aux=aux)
+    masked = _density_contour(X, Y, Z, levels=[0.5], ax=ax, aux=aux, min_density=0.1)
+    assert np.allclose(base.levels, masked.levels)
+    plt.close(ax.figure)
+
+
+@pytest.mark.parametrize("bad", [-0.1, 1.0])
+def test_density_contour_rejects_bad_min_density(rng, bad):
+    x = rng.normal(size=200)
+    y = rng.normal(size=200)
+    X, Y, Z, aux = estimate_density_mesh(x, y)
+    _, ax = plt.subplots()
+    with pytest.raises(ValueError):
+        _density_contour(X, Y, Z, levels=[0.5], ax=ax, aux=aux, min_density=bad)
+    plt.close(ax.figure)
+
+
 @pytest.mark.parametrize("conditional_on", ["x", "y"])
 def test_kde_contour_conditional_returns_contourset(rng, conditional_on):
     x = rng.normal(size=300)
@@ -496,4 +532,42 @@ def test_kde_contour_conditional_returns_contourset(rng, conditional_on):
     contour_set = kde_contour(x, y, levels=[0.5], ax=ax, conditional_on=conditional_on)
     assert contour_set is not None
     assert np.all(np.isfinite(np.asarray(contour_set.levels)))
+    plt.close(ax.figure)
+
+
+@pytest.mark.parametrize("conditional_on", [None, "x", "y"])
+def test_kde_contour_min_density_runs(rng, conditional_on):
+    x = rng.normal(size=300)
+    y = 0.8 * x + rng.normal(size=300)
+    _, ax = plt.subplots()
+    contour_set = kde_contour(
+        x,
+        y,
+        levels=[0.5],
+        ax=ax,
+        conditional_on=conditional_on,
+        min_density=0.05,
+    )
+    assert contour_set is not None
+    assert np.all(np.isfinite(np.asarray(contour_set.levels)))
+    plt.close(ax.figure)
+
+
+def test_kde_contour_min_density_preserves_levels(rng):
+    x = rng.normal(size=300)
+    y = rng.normal(size=300)
+    _, ax = plt.subplots()
+    base = kde_contour(x, y, levels=[0.5], ax=ax, min_density=0.0)
+    masked = kde_contour(x, y, levels=[0.5], ax=ax, min_density=0.1)
+    assert np.allclose(base.levels, masked.levels)
+    plt.close(ax.figure)
+
+
+@pytest.mark.parametrize("bad", [-0.1, 1.0])
+def test_kde_contour_rejects_bad_min_density(rng, bad):
+    x = rng.normal(size=200)
+    y = rng.normal(size=200)
+    _, ax = plt.subplots()
+    with pytest.raises(ValueError):
+        kde_contour(x, y, levels=[0.5], ax=ax, min_density=bad)
     plt.close(ax.figure)
