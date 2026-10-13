@@ -93,6 +93,55 @@ def kde_at(
     )
 
 
+def _density_contour(
+    X: npt.ArrayLike,
+    Y: npt.ArrayLike,
+    Z: npt.ArrayLike,
+    levels: float | npt.ArrayLike = (0.5,),
+    ax: matplotlib.axes.Axes | None = None,
+    *,
+    cell_area: float,
+    fill: bool = False,
+    **contour_kwargs: Any,
+) -> matplotlib.contour.ContourSet:
+    """
+    Draw contours of a precomputed density field.
+
+    Private low-level counterpart of `kde_contour`: it assumes `Z` is already
+    evaluated on the mesh `X`, `Y` (as produced by
+    `lib.density.estimate_density`), so any custom or modified density can be
+    drawn in the same style. `levels` is the tail probability mass in `(0, 1)`:
+    the fraction of mass lying outside each contour, so the enclosed region
+    holds `1 - level`. The geometry is invariant to the overall scale of `Z`,
+    because `lib.density.enclosed_thresholds` normalizes by
+    `sum(Z) * cell_area`.
+
+    Parameters:
+    - `X`, `Y`, `Z`: mesh coordinates and the field value at each grid point.
+    - `levels`: tail probability mass for each contour, in `(0, 1)`.
+    - `ax`: axes to draw into; the current axes is used if omitted.
+    - `cell_area`: area of one grid cell, used to integrate `Z`.
+    - `fill`: draw filled contours (`contourf`) instead of lines.
+    - `contour_kwargs`: forwarded to `Axes.contour` / `Axes.contourf`.
+
+    Returns the drawn contour set; its `.levels` holds the density thresholds.
+    """
+    X = np.asarray(X, dtype=float)
+    Y = np.asarray(Y, dtype=float)
+    Z = np.asarray(Z, dtype=float)
+    if Z.shape != X.shape or Z.shape != Y.shape:
+        raise ValueError("X, Y and Z must have the same shape")
+
+    if ax is None:
+        import matplotlib.pyplot as plt
+
+        ax = plt.gca()
+
+    thresholds = np.unique(enclosed_thresholds(Z, cell_area, levels))
+    draw = ax.contourf if fill else ax.contour
+    return draw(X, Y, Z, levels=np.sort(thresholds), **contour_kwargs)
+
+
 def kde_contour(
     x: npt.ArrayLike,
     y: npt.ArrayLike,
@@ -125,11 +174,6 @@ def kde_contour(
 
     Returns the drawn contour set; its `.levels` holds the density thresholds.
     """
-    if ax is None:
-        import matplotlib.pyplot as plt
-
-        ax = plt.gca()
-
     X, Y, Z, cell_area = estimate_density(
         x,
         y,
@@ -139,7 +183,13 @@ def kde_contour(
         kernel=kernel,
         bandwidth=bandwidth,
     )
-    thresholds = np.unique(enclosed_thresholds(Z, cell_area, levels))
-
-    draw = ax.contourf if fill else ax.contour
-    return draw(X, Y, Z, levels=np.sort(thresholds), **contour_kwargs)
+    return _density_contour(
+        X,
+        Y,
+        Z,
+        levels=levels,
+        ax=ax,
+        cell_area=cell_area,
+        fill=fill,
+        **contour_kwargs,
+    )

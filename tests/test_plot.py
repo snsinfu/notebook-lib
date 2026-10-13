@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 import scipy.stats
 
+from lib.density import estimate_density
 from lib.plot import (
     attach_colorbar,
     bw_method,
@@ -23,6 +24,7 @@ from lib.plot import (
     texsci,
     use_log_ticks,
 )
+from lib.plot.density import _density_contour
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -455,3 +457,22 @@ def test_kde_contour_accepts_kernel(rng):
     )
     assert contour_set is not None
     plt.close(ax.figure)
+
+
+def test_density_contour_returns_contourset(rng):
+    x = rng.normal(size=300)
+    y = rng.normal(size=300)
+    X, Y, Z, cell_area = estimate_density(x, y)
+    _, ax = plt.subplots()
+    contour_set = _density_contour(X, Y, Z, levels=[0.5], ax=ax, cell_area=cell_area)
+    assert contour_set is not None
+    assert np.all(np.isfinite(np.asarray(contour_set.levels)))
+    plt.close(ax.figure)
+
+
+def test_density_contour_rejects_mismatched_shapes():
+    X = np.zeros((5, 5))
+    Y = np.zeros((5, 5))
+    Z = np.zeros((4, 5))
+    with pytest.raises(ValueError):
+        _density_contour(X, Y, Z, levels=[0.5], cell_area=1.0)
