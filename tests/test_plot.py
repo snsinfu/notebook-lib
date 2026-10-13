@@ -459,6 +459,15 @@ def test_kde_contour_accepts_kernel(rng):
     plt.close(ax.figure)
 
 
+def test_kde_contour_conditional_rejects_callable_kernel(rng):
+    x = rng.normal(size=50)
+    y = rng.normal(size=50)
+    _, ax = plt.subplots()
+    with pytest.raises(TypeError):
+        kde_contour(x, y, ax=ax, conditional_on="y", kernel=lambda points: points)
+    plt.close(ax.figure)
+
+
 def test_density_contour_returns_contourset(rng):
     x = rng.normal(size=300)
     y = rng.normal(size=300)
@@ -476,3 +485,14 @@ def test_density_contour_rejects_mismatched_shapes():
     Z = np.zeros((4, 5))
     with pytest.raises(ValueError):
         _density_contour(X, Y, Z, levels=[0.5], cell_area=1.0)
+
+
+@pytest.mark.parametrize("conditional_on", ["x", "y"])
+def test_kde_contour_conditional_returns_contourset(rng, conditional_on):
+    x = rng.normal(size=300)
+    y = 0.8 * x + rng.normal(size=300)
+    _, ax = plt.subplots()
+    contour_set = kde_contour(x, y, levels=[0.5], ax=ax, conditional_on=conditional_on)
+    assert contour_set is not None
+    assert np.all(np.isfinite(np.asarray(contour_set.levels)))
+    plt.close(ax.figure)

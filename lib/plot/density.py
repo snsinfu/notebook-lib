@@ -16,6 +16,7 @@ import numpy.typing as npt
 from ..density.bandwidth import BandwidthMethod
 from ..density.estimate import (
     enclosed_thresholds,
+    estimate_conditional_density,
     estimate_density,
     estimate_density_at,
 )
@@ -148,6 +149,7 @@ def kde_contour(
     levels: float | npt.ArrayLike = (0.5,),
     ax: matplotlib.axes.Axes | None = None,
     *,
+    conditional_on: str | None = None,
     gridsize: int = 200,
     cut: float = 3.0,
     weights: npt.ArrayLike | None = None,
@@ -165,6 +167,9 @@ def kde_contour(
       fraction of mass lying outside the contour. The enclosed mass is
       `1 - level`, so `0.5` gives the median contour.
     - `ax`: axes to draw into; the current axes is used if omitted.
+    - `conditional_on`: `None` (default) draws the joint density; `"y"` draws
+      the conditional density of `x` given `y` (`f(x|y) = f(x,y)/f(y)`) and
+      `"x"` draws `f(y|x)`. Not available with a callable `kernel`.
     - `gridsize`, `cut`: see `lib.density.estimate_density`.
     - `weights`: optional per-sample weights.
     - `kernel`: `"scipy"`, an in-library kernel name, or a callable.
@@ -174,15 +179,29 @@ def kde_contour(
 
     Returns the drawn contour set; its `.levels` holds the density thresholds.
     """
-    X, Y, Z, cell_area = estimate_density(
-        x,
-        y,
-        gridsize=gridsize,
-        cut=cut,
-        weights=weights,
-        kernel=kernel,
-        bandwidth=bandwidth,
-    )
+    if conditional_on is None:
+        X, Y, Z, cell_area = estimate_density(
+            x,
+            y,
+            gridsize=gridsize,
+            cut=cut,
+            weights=weights,
+            kernel=kernel,
+            bandwidth=bandwidth,
+        )
+    elif isinstance(kernel, str):
+        X, Y, Z, cell_area = estimate_conditional_density(
+            x,
+            y,
+            given=conditional_on,
+            gridsize=gridsize,
+            cut=cut,
+            weights=weights,
+            kernel=kernel,
+            bandwidth=bandwidth,
+        )
+    else:
+        raise TypeError("conditional_on cannot be used with a callable kernel")
     return _density_contour(
         X,
         Y,
