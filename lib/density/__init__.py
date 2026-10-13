@@ -8,9 +8,11 @@ from __future__ import annotations
 
 from .bandwidth import BandwidthMethod, bw_method, resolve_bandwidth
 from .estimate import (
+    ConditionalRidgeAux,
     DensityMeshAux,
     enclosed_thresholds,
     estimate_conditional_density_mesh,
+    estimate_conditional_ridge,
     estimate_density_at,
     estimate_density_mesh,
 )
@@ -31,10 +33,12 @@ from .regression import (
 
 __all__ = [
     "BandwidthMethod",
+    "ConditionalRidgeAux",
     "DensityMeshAux",
     "bw_method",
     "enclosed_thresholds",
     "estimate_conditional_density_mesh",
+    "estimate_conditional_ridge",
     "estimate_density_at",
     "estimate_density_mesh",
     "kernel_flux",

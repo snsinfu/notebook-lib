@@ -12,6 +12,7 @@ from typing import NamedTuple
 import numpy as np
 import numpy.typing as npt
 import scipy.stats
+from scipy.signal import find_peaks
 
 from .bandwidth import BandwidthMethod, resolve_bandwidth, scipy_bandwidth
 from .kernels import (
@@ -40,6 +41,26 @@ class DensityMeshAux(NamedTuple):
 
     cell_area: float
     joint: np.ndarray
+
+
+class ConditionalRidgeAux(NamedTuple):
+    """
+    Per-row diagnostics returned alongside a conditional ridge.
+
+    All arrays are aligned with the conditioning axis of the mesh (length
+    `gridsize`).
+
+    - `support`: the joint density `p(x, y)` at the conditioning value is above
+      the `min_density` floor.
+    - `ambiguous`: the slice has more than one mode (`n_modes >= 2`).
+    - `n_modes`: number of modes resolved in the slice.
+    - `contrast`: `(max - median) / max` of the slice density.
+    """
+
+    support: np.ndarray
+    ambiguous: np.ndarray
+    n_modes: np.ndarray
+    contrast: np.ndarray
 
 
 def _check_weights(weights: npt.ArrayLike | None, n: int) -> np.ndarray | None:
@@ -291,6 +312,209 @@ def estimate_conditional_density_mesh(
     joint = Z
     Z = Z / np.where(denom > 0, denom, np.inf)
     return X, Y, Z, DensityMeshAux(float(cell_area), joint)
+
+
+def _slice_modes(
+    z: np.ndarray,
+    axis_coord: np.ndarray,
+    bandwidth: float,
+    *,
+    min_prominence: float,
+    min_separation: float,
+) -> tuple[int, float]:
+    """
+    Count the modes of one conditional slice.
+
+    `z` is the density along `axis_coord` (the axis being maximized). A peak is
+    counted when its prominence and height exceed `min_prominence` (a fraction
+    of the slice maximum), and a secondary peak is counted only when it is
+    farther than `min_separation` bandwidths from the dominant one. Returns
+    `(n_modes, contrast)`, where `contrast` is `(max - median) / max`.
+    """
+    zmax = float(np.max(z))
+    if zmax <= 0 or not np.isfinite(zmax):
+        return 0, 0.0
+
+    contrast = (zmax - float(np.median(z))) / zmax
+
+    peaks, props = find_peaks(z, prominence=0.0)
+    if peaks.size == 0:
+        return 0, contrast
+
+    kept = (props["prominences"] > min_prominence * zmax) & (
+        z[peaks] > min_prominence * zmax
+    )
+    modes = peaks[kept]
+    if modes.size == 0:
+        return 0, contrast
+
+    modes = modes[np.argsort(z[modes])[::-1]]
+    main = int(modes[0])
+    separation = min_separation * bandwidth
+    secondary = [
+        int(mode)
+        for mode in modes[1:]
+        if abs(axis_coord[mode] - axis_coord[main]) > separation
+    ]
+    return 1 + len(secondary), contrast
+
+
+def _trace_ridge(field: np.ndarray, jump_penalty: float) -> np.ndarray:
+    """
+    Trace one continuous ridge through the rows of `field`.
+
+    `field` has shape `(n_cond, n_max)`. Each row is normalized by its maximum
+    and a Viterbi pass maximizes the summed density minus a quadratic jump cost
+    `jump_penalty * (column - previous column) ** 2` between adjacent rows.
+    Returns the maximizing column index for each row.
+    """
+    n_cond, n_max = field.shape
+    normalized = field / np.maximum(
+        field.max(axis=1, keepdims=True), np.finfo(float).tiny
+    )
+    columns = np.arange(n_max)
+    penalty = jump_penalty * (columns[:, None] - columns[None, :]) ** 2
+
+    score = np.empty((n_cond, n_max))
+    back = np.zeros((n_cond, n_max), dtype=int)
+    score[0] = normalized[0]
+    for i in range(1, n_cond):
+        candidates = score[i - 1][:, None] - penalty
+        back[i] = np.argmax(candidates, axis=0)
+        score[i] = normalized[i] + candidates[back[i], columns]
+
+    path = np.empty(n_cond, dtype=int)
+    path[-1] = int(np.argmax(score[-1]))
+    for i in range(n_cond - 1, 0, -1):
+        path[i - 1] = back[i, path[i]]
+    return path
+
+
+def estimate_conditional_ridge(
+    x: npt.ArrayLike,
+    y: npt.ArrayLike,
+    *,
+    given: str = "y",
+    gridsize: int = 200,
+    cut: float = 3.0,
+    weights: npt.ArrayLike | None = None,
+    kernel: str | Kernel = "scipy",
+    bandwidth: float | npt.ArrayLike | BandwidthMethod | None = None,
+    min_density: float = 0.0,
+    min_prominence: float = 0.25,
+    min_separation: float = 2.0,
+    jump_penalty: float = 0.02,
+    on_ambiguous: str = "dominant",
+) -> tuple[np.ndarray, np.ndarray, ConditionalRidgeAux]:
+    """
+    Estimate the ridge (mode locus) of a conditional density.
+
+    `given="y"` returns the mode of `p(x|y)` at each `y`, as `x` against `y`;
+    `given="x"` returns the mode of `p(y|x)` at each `x`. For a fixed
+    conditioning value the marginal is constant, so the mode is a property of
+    the joint density `p(x, y)`; the estimate is built from the joint mesh. A
+    Viterbi pass keeps the curve continuous and selects one branch at
+    crossings.
+
+    Rows where the joint density is below `min_density * max(p(x, y))` are set
+    to NaN (disabled by default). Other rows are returned as traced, with their
+    per-row diagnostics in `ConditionalRidgeAux`.
+
+    Parameters:
+    - `x`, `y`: sample coordinates (same length).
+    - `given`: `"y"` returns `x` as a function of `y`; `"x"` returns `y` as a
+      function of `x`.
+    - `gridsize`, `cut`: as in `estimate_density_mesh`.
+    - `weights`: optional per-sample weights.
+    - `kernel`: `"scipy"`, an in-library kernel name, or a callable.
+    - `bandwidth`: absolute width, `None` (Scott's rule), or `bw_method(...)`.
+    - `min_density`: joint-density floor, a fraction of the peak `p(x, y)` in
+      `[0, 1)`; rows below it are set to NaN. `0` (default) disables the mask.
+    - `min_prominence`: prominence and height floor for a peak to count as a
+      mode, as a fraction of the slice maximum.
+    - `min_separation`: minimum distance between two modes, in bandwidths.
+    - `jump_penalty`: Viterbi jump cost, in squared grid columns.
+    - `on_ambiguous`: action where `aux.ambiguous` is True: `"dominant"`
+      (default) keeps the dominant branch, `"nan"` sets those rows to NaN, and
+      `"raise"` raises `ValueError`.
+
+    Returns `(ridge_x, ridge_y, aux)`: the traced ridge and its diagnostics.
+    """
+    if given not in {"x", "y"}:
+        raise ValueError("given must be 'x' or 'y'")
+    if on_ambiguous not in {"dominant", "nan", "raise"}:
+        raise ValueError("on_ambiguous must be 'dominant', 'nan', or 'raise'")
+    min_density = float(min_density)
+    if not np.isfinite(min_density) or min_density < 0 or min_density >= 1:
+        raise ValueError("min_density must be a fraction in [0, 1)")
+    min_prominence = float(min_prominence)
+    if not np.isfinite(min_prominence) or not 0 <= min_prominence <= 1:
+        raise ValueError("min_prominence must be a fraction in [0, 1]")
+    min_separation = float(min_separation)
+    if not np.isfinite(min_separation) or min_separation < 0:
+        raise ValueError("min_separation must be non-negative")
+    jump_penalty = float(jump_penalty)
+    if not np.isfinite(jump_penalty) or jump_penalty < 0:
+        raise ValueError("jump_penalty must be non-negative")
+
+    x_values = np.asarray(x, float).ravel()
+    y_values = np.asarray(y, float).ravel()
+    if x_values.shape != y_values.shape:
+        raise ValueError("x and y must have the same length")
+
+    data = np.vstack([x_values, y_values])
+    X, Y, Z, _, width, _ = _joint_density(
+        data,
+        gridsize=gridsize,
+        cut=cut,
+        weights=weights,
+        kernel=kernel,
+        bandwidth=bandwidth,
+    )
+
+    if given == "y":
+        field = Z
+        max_coord = X[0, :]
+        cond_coord = Y[:, 0]
+        max_h = float(width[0])
+        support = Z.max(axis=1) >= min_density * float(Z.max())
+    else:
+        field = Z.T
+        max_coord = Y[:, 0]
+        cond_coord = X[0, :]
+        max_h = float(width[1])
+        support = Z.max(axis=0) >= min_density * float(Z.max())
+
+    n_cond = field.shape[0]
+    n_modes = np.zeros(n_cond, dtype=int)
+    contrast = np.zeros(n_cond)
+    for i in range(n_cond):
+        n_modes[i], contrast[i] = _slice_modes(
+            field[i],
+            max_coord,
+            max_h,
+            min_prominence=min_prominence,
+            min_separation=min_separation,
+        )
+
+    path = _trace_ridge(field, jump_penalty)
+    ridge_max = np.asarray(max_coord, dtype=float)[path]
+
+    ambiguous = n_modes >= 2
+    ridge_max = np.where(support, ridge_max, np.nan)
+    if on_ambiguous == "nan":
+        ridge_max = np.where(ambiguous, np.nan, ridge_max)
+    elif on_ambiguous == "raise" and np.any(ambiguous):
+        raise ValueError(
+            "ridge is ambiguous (multimodal) for some conditioning values; "
+            "use on_ambiguous='dominant' or 'nan'"
+        )
+
+    aux = ConditionalRidgeAux(support, ambiguous, n_modes, contrast)
+    cond_values = np.asarray(cond_coord, dtype=float)
+    if given == "y":
+        return ridge_max, cond_values, aux
+    return cond_values, ridge_max, aux
 
 
 def enclosed_thresholds(
