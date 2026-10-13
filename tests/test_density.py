@@ -69,17 +69,34 @@ def test_kernel_flux_rejects_short_sequence():
 def test_estimate_density_mesh_integrates_to_one(rng):
     x = rng.normal(size=500)
     y = rng.normal(size=500)
-    _, _, Z, cell_area = estimate_density_mesh(x, y, gridsize=200)
-    assert np.isclose(Z.sum() * cell_area, 1.0, atol=0.02)
+    _, _, Z, aux = estimate_density_mesh(x, y, gridsize=200)
+    assert np.isclose(Z.sum() * aux.cell_area, 1.0, atol=0.02)
+
+
+def test_estimate_density_mesh_aux_joint_is_field(rng):
+    x = rng.normal(size=500)
+    y = rng.normal(size=500)
+    _, _, Z, aux = estimate_density_mesh(x, y, gridsize=100)
+    assert aux.cell_area > 0
+    assert np.allclose(aux.joint, Z)
 
 
 def test_estimate_density_mesh_kernel_integrates_to_one(rng):
     x = rng.normal(size=500)
     y = rng.normal(size=500)
-    _, _, Z, cell_area = estimate_density_mesh(
+    _, _, Z, aux = estimate_density_mesh(
         x, y, gridsize=200, kernel="epanechnikov", bandwidth=0.5
     )
-    assert np.isclose(Z.sum() * cell_area, 1.0, atol=0.05)
+    assert np.isclose(Z.sum() * aux.cell_area, 1.0, atol=0.05)
+
+
+def test_estimate_conditional_density_mesh_aux_joint_matches_joint(rng):
+    x = rng.normal(size=500)
+    y = 0.8 * x + rng.normal(size=500)
+    _, _, _, cond = estimate_conditional_density_mesh(x, y, given="y", gridsize=100)
+    _, _, Z_joint, joint = estimate_density_mesh(x, y, gridsize=100)
+    assert cond.cell_area == joint.cell_area
+    assert np.allclose(cond.joint, Z_joint)
 
 
 def test_bw_method_scott_matches_default(rng):

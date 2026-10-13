@@ -15,6 +15,7 @@ import numpy.typing as npt
 
 from ..density.bandwidth import BandwidthMethod
 from ..density.estimate import (
+    DensityMeshAux,
     enclosed_thresholds,
     estimate_conditional_density_mesh,
     estimate_density_at,
@@ -101,7 +102,7 @@ def _density_contour(
     levels: float | npt.ArrayLike = (0.5,),
     ax: matplotlib.axes.Axes | None = None,
     *,
-    cell_area: float,
+    aux: DensityMeshAux,
     fill: bool = False,
     **contour_kwargs: Any,
 ) -> matplotlib.contour.ContourSet:
@@ -115,13 +116,14 @@ def _density_contour(
     the fraction of mass lying outside each contour, so the enclosed region
     holds `1 - level`. The geometry is invariant to the overall scale of `Z`,
     because `lib.density.enclosed_thresholds` normalizes by
-    `sum(Z) * cell_area`.
+    `sum(Z) * aux.cell_area`.
 
     Parameters:
     - `X`, `Y`, `Z`: mesh coordinates and the field value at each grid point.
     - `levels`: tail probability mass for each contour, in `(0, 1)`.
     - `ax`: axes to draw into; the current axes is used if omitted.
-    - `cell_area`: area of one grid cell, used to integrate `Z`.
+    - `aux`: grid metadata from a mesh estimator; `aux.cell_area` integrates
+      `Z` and `aux.joint` is the joint density `p(x, y)` on the same mesh.
     - `fill`: draw filled contours (`contourf`) instead of lines.
     - `contour_kwargs`: forwarded to `Axes.contour` / `Axes.contourf`.
 
@@ -132,13 +134,15 @@ def _density_contour(
     Z = np.asarray(Z, dtype=float)
     if Z.shape != X.shape or Z.shape != Y.shape:
         raise ValueError("X, Y and Z must have the same shape")
+    if aux.joint.shape != Z.shape:
+        raise ValueError("aux.joint must have the same shape as Z")
 
     if ax is None:
         import matplotlib.pyplot as plt
 
         ax = plt.gca()
 
-    thresholds = np.unique(enclosed_thresholds(Z, cell_area, levels))
+    thresholds = np.unique(enclosed_thresholds(Z, aux.cell_area, levels))
     draw = ax.contourf if fill else ax.contour
     return draw(X, Y, Z, levels=np.sort(thresholds), **contour_kwargs)
 
@@ -180,7 +184,7 @@ def kde_contour(
     Returns the drawn contour set; its `.levels` holds the density thresholds.
     """
     if conditional_on is None:
-        X, Y, Z, cell_area = estimate_density_mesh(
+        X, Y, Z, aux = estimate_density_mesh(
             x,
             y,
             gridsize=gridsize,
@@ -190,7 +194,7 @@ def kde_contour(
             bandwidth=bandwidth,
         )
     elif isinstance(kernel, str):
-        X, Y, Z, cell_area = estimate_conditional_density_mesh(
+        X, Y, Z, aux = estimate_conditional_density_mesh(
             x,
             y,
             given=conditional_on,
@@ -208,7 +212,7 @@ def kde_contour(
         Z,
         levels=levels,
         ax=ax,
-        cell_area=cell_area,
+        aux=aux,
         fill=fill,
         **contour_kwargs,
     )

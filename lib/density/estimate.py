@@ -7,6 +7,8 @@ drawing, which are intended for plotting, live in `lib.plot.density`.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 import numpy as np
 import numpy.typing as npt
 import scipy.stats
@@ -24,6 +26,20 @@ _SCALAR_KERNELS = {
     "gaussian": scalar_gaussian_kernel,
     "epanechnikov": scalar_epanechnikov_kernel,
 }
+
+
+class DensityMeshAux(NamedTuple):
+    """
+    Grid metadata returned alongside a density mesh.
+
+    `cell_area` is the area of one grid cell, used to integrate the field.
+    `joint` is the joint density `p(x, y)` on the mesh: for a joint estimate it
+    is the returned field itself, and for a conditional estimate it is the
+    numerator `f(x, y)` before the division by the marginal.
+    """
+
+    cell_area: float
+    joint: np.ndarray
 
 
 def _check_weights(weights: npt.ArrayLike | None, n: int) -> np.ndarray | None:
@@ -151,7 +167,7 @@ def estimate_density_mesh(
     weights: npt.ArrayLike | None = None,
     kernel: str | Kernel = "scipy",
     bandwidth: float | npt.ArrayLike | BandwidthMethod | None = None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, DensityMeshAux]:
     """
     Evaluate a 2-D KDE of `(x, y)` on a regular grid.
 
@@ -163,8 +179,9 @@ def estimate_density_mesh(
     - `kernel`: `"scipy"`, an in-library kernel name, or a callable.
     - `bandwidth`: absolute width, `None` (Scott's rule), or `bw_method(...)`.
 
-    Returns `(X, Y, Z, cell_area)`: meshgrid coordinates, the density at each
-    grid point, and the area of one grid cell for integrating the density.
+    Returns `(X, Y, Z, aux)`: meshgrid coordinates, the density at each grid
+    point, and a `DensityMeshAux` whose `cell_area` integrates the density and
+    whose `joint` is the density field itself.
     """
     data = np.vstack([np.asarray(x, float).ravel(), np.asarray(y, float).ravel()])
     X, Y, Z, cell_area, _, _ = _joint_density(
@@ -175,7 +192,7 @@ def estimate_density_mesh(
         kernel=kernel,
         bandwidth=bandwidth,
     )
-    return X, Y, Z, cell_area
+    return X, Y, Z, DensityMeshAux(float(cell_area), Z)
 
 
 def _marginal_density(
@@ -214,7 +231,7 @@ def estimate_conditional_density_mesh(
     weights: npt.ArrayLike | None = None,
     kernel: str = "scipy",
     bandwidth: float | npt.ArrayLike | BandwidthMethod | None = None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, DensityMeshAux]:
     """
     Evaluate the conditional density f(x|y) or f(y|x) on a regular grid.
 
@@ -234,7 +251,9 @@ def estimate_conditional_density_mesh(
     - `kernel`: `"scipy"`, `"gaussian"`, or `"epanechnikov"`.
     - `bandwidth`: absolute width, `None` (Scott's rule), or `bw_method(...)`.
 
-    Returns `(X, Y, Z, cell_area)`.
+    Returns `(X, Y, Z, aux)`: meshgrid coordinates, the conditional density at
+    each grid point, and a `DensityMeshAux` whose `cell_area` integrates the
+    field and whose `joint` is the numerator `f(x, y)` before division.
     """
     x_values = np.asarray(x, float).ravel()
     y_values = np.asarray(y, float).ravel()
@@ -269,8 +288,9 @@ def estimate_conditional_density_mesh(
 
     # Compact-support kernels (Epanechnikov) have a zero marginal outside the
     # sample support; Z/inf -> 0 there instead of 0/0 -> nan.
+    joint = Z
     Z = Z / np.where(denom > 0, denom, np.inf)
-    return X, Y, Z, cell_area
+    return X, Y, Z, DensityMeshAux(float(cell_area), joint)
 
 
 def enclosed_thresholds(

@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import scipy.stats
 
-from lib.density import estimate_density_mesh
+from lib.density import DensityMeshAux, estimate_density_mesh
 from lib.plot import (
     attach_colorbar,
     bw_method,
@@ -471,9 +471,9 @@ def test_kde_contour_conditional_rejects_callable_kernel(rng):
 def test_density_contour_returns_contourset(rng):
     x = rng.normal(size=300)
     y = rng.normal(size=300)
-    X, Y, Z, cell_area = estimate_density_mesh(x, y)
+    X, Y, Z, aux = estimate_density_mesh(x, y)
     _, ax = plt.subplots()
-    contour_set = _density_contour(X, Y, Z, levels=[0.5], ax=ax, cell_area=cell_area)
+    contour_set = _density_contour(X, Y, Z, levels=[0.5], ax=ax, aux=aux)
     assert contour_set is not None
     assert np.all(np.isfinite(np.asarray(contour_set.levels)))
     plt.close(ax.figure)
@@ -483,8 +483,9 @@ def test_density_contour_rejects_mismatched_shapes():
     X = np.zeros((5, 5))
     Y = np.zeros((5, 5))
     Z = np.zeros((4, 5))
+    aux = DensityMeshAux(1.0, np.zeros((5, 5)))
     with pytest.raises(ValueError):
-        _density_contour(X, Y, Z, levels=[0.5], cell_area=1.0)
+        _density_contour(X, Y, Z, levels=[0.5], aux=aux)
 
 
 @pytest.mark.parametrize("conditional_on", ["x", "y"])
