@@ -47,8 +47,8 @@ class ConditionalRidgeAux(NamedTuple):
     """
     Per-row diagnostics returned alongside a conditional ridge.
 
-    All arrays are aligned with the conditioning axis of the mesh (length
-    `gridsize`).
+    All arrays are aligned with the conditioning axis of the mesh: length `ny`
+    for `given="y"` and `nx` for `given="x"`.
 
     - `support`: the joint density `p(x, y)` at the conditioning value is above
       the `min_density` floor.
@@ -78,6 +78,54 @@ def _check_weights(weights: npt.ArrayLike | None, n: int) -> np.ndarray | None:
     if values.sum() <= 0:
         raise ValueError("weights must not sum to zero")
     return values
+
+
+def _check_gridsize(gridsize: int | tuple[int, int]) -> tuple[int, int]:
+    """
+    Validate a grid division count and return it as `(nx, ny)`.
+
+    `gridsize` is an int (the same count on both axes) or a pair `(nx, ny)`;
+    each count must be at least 2.
+    """
+    match gridsize:
+        case int() | np.integer():
+            counts = (int(gridsize), int(gridsize))
+        case (int() | np.integer(), int() | np.integer()):
+            counts = (int(gridsize[0]), int(gridsize[1]))
+        case _:
+            raise TypeError("gridsize must be an int or a pair of ints")
+    if counts[0] < 2 or counts[1] < 2:
+        raise ValueError("gridsize must be at least 2 on each axis")
+    return counts
+
+
+def _check_extent(
+    name: str, extent: tuple[float, float] | None
+) -> tuple[float, float] | None:
+    """
+    Validate an optional `(min, max)` grid extent and return it.
+
+    `None` passes through; otherwise the bounds must be finite with `min < max`.
+    """
+    if extent is None:
+        return None
+    values = tuple(float(value) for value in extent)
+    if len(values) != 2:
+        raise ValueError(f"{name} must be a (min, max) pair")
+    lo, hi = values
+    if not (np.isfinite(lo) and np.isfinite(hi)) or lo >= hi:
+        raise ValueError(f"{name} must be finite with min < max")
+    return (lo, hi)
+
+
+def _check_pad(pad: float) -> float:
+    """
+    Validate the auto-extent padding and return it as a float.
+    """
+    value = float(pad)
+    if not np.isfinite(value) or value < 0:
+        raise ValueError("pad must be finite and non-negative")
+    return value
 
 
 def estimate_density_at(
@@ -131,8 +179,10 @@ def estimate_density_at(
 def _joint_density(
     data: np.ndarray,
     *,
-    gridsize: int,
-    cut: float,
+    gridsize: int | tuple[int, int],
+    x_extent: tuple[float, float] | None,
+    y_extent: tuple[float, float] | None,
+    pad: float,
     weights: npt.ArrayLike | None,
     kernel: str | Kernel,
     bandwidth: float | npt.ArrayLike | BandwidthMethod | None,
@@ -140,16 +190,21 @@ def _joint_density(
     """
     Evaluate a 2-D KDE on a regular grid of `data` of shape `(2, n)`.
 
-    Shared by `estimate_density_mesh` and `estimate_conditional_density_mesh`.
-    Returns `(X, Y, Z, cell_area, width, weight_values)`: the meshgrid
-    coordinates, the density, the area of one grid cell, the per-axis bandwidth,
-    and the validated weights. `width` is resolved from the 2-D data, so
-    heuristics use the 2-D Scott/Silverman factor.
+    Shared by the grid estimators. Returns `(X, Y, Z, cell_area, width,
+    weight_values)`: the meshgrid coordinates, the density, the area of one grid
+    cell, the per-axis bandwidth, and the validated weights. `width` is resolved
+    from the 2-D data, so heuristics use the 2-D Scott/Silverman factor.
+
+    `gridsize` is the number of grid points per axis (an int for both, or a pair
+    `(nx, ny)`). Each axis uses `x_extent`/`y_extent` when given, otherwise it is
+    padded by `pad` bandwidths beyond the data range.
     """
     if data.shape[1] < 2:
         raise ValueError("need at least two samples to fit a KDE")
-    if gridsize < 2:
-        raise ValueError("gridsize must be at least 2")
+    nx, ny = _check_gridsize(gridsize)
+    x_extent = _check_extent("x_extent", x_extent)
+    y_extent = _check_extent("y_extent", y_extent)
+    pad = _check_pad(pad)
     weight_values = _check_weights(weights, data.shape[1])
 
     if kernel == "scipy":
@@ -162,11 +217,15 @@ def _joint_density(
         collected = np.ones(data.shape[1]) if weight_values is None else weight_values
         width = resolve_bandwidth(bandwidth, data, collected)
 
-    lo = data.min(axis=1) - cut * width
-    hi = data.max(axis=1) + cut * width
+    lo = data.min(axis=1) - pad * width
+    hi = data.max(axis=1) + pad * width
+    if x_extent is not None:
+        lo[0], hi[0] = x_extent
+    if y_extent is not None:
+        lo[1], hi[1] = y_extent
 
-    gx = np.linspace(lo[0], hi[0], gridsize)
-    gy = np.linspace(lo[1], hi[1], gridsize)
+    gx = np.linspace(lo[0], hi[0], nx)
+    gy = np.linspace(lo[1], hi[1], ny)
     X, Y = np.meshgrid(gx, gy)
     Z = estimate_density_at(
         data,
@@ -183,8 +242,10 @@ def estimate_density_mesh(
     x: npt.ArrayLike,
     y: npt.ArrayLike,
     *,
-    gridsize: int = 200,
-    cut: float = 3.0,
+    gridsize: int | tuple[int, int] = 200,
+    x_extent: tuple[float, float] | None = None,
+    y_extent: tuple[float, float] | None = None,
+    pad: float = 3.0,
     weights: npt.ArrayLike | None = None,
     kernel: str | Kernel = "scipy",
     bandwidth: float | npt.ArrayLike | BandwidthMethod | None = None,
@@ -194,8 +255,13 @@ def estimate_density_mesh(
 
     Parameters:
     - `x`, `y`: sample coordinates (same length).
-    - `gridsize`: number of grid points along each dimension.
-    - `cut`: grid padding, in bandwidths, beyond the data range.
+    - `gridsize`: number of grid points per axis: an int (same on both) or a
+      pair `(nx, ny)`. The mesh is `(ny, nx)` because of the meshgrid order.
+    - `x_extent`, `y_extent`: explicit `(min, max)` bounds for that axis;
+      `None` (default) pads the axis's data range by `pad` bandwidths. The two
+      axes are independent.
+    - `pad`: padding, in bandwidths, added to each axis without an explicit
+      extent.
     - `weights`: optional per-sample weights.
     - `kernel`: `"scipy"`, an in-library kernel name, or a callable.
     - `bandwidth`: absolute width, `None` (Scott's rule), or `bw_method(...)`.
@@ -208,7 +274,9 @@ def estimate_density_mesh(
     X, Y, Z, cell_area, _, _ = _joint_density(
         data,
         gridsize=gridsize,
-        cut=cut,
+        x_extent=x_extent,
+        y_extent=y_extent,
+        pad=pad,
         weights=weights,
         kernel=kernel,
         bandwidth=bandwidth,
@@ -247,8 +315,10 @@ def estimate_conditional_density_mesh(
     y: npt.ArrayLike,
     *,
     given: str = "y",
-    gridsize: int = 200,
-    cut: float = 3.0,
+    gridsize: int | tuple[int, int] = 200,
+    x_extent: tuple[float, float] | None = None,
+    y_extent: tuple[float, float] | None = None,
+    pad: float = 3.0,
     weights: npt.ArrayLike | None = None,
     kernel: str = "scipy",
     bandwidth: float | npt.ArrayLike | BandwidthMethod | None = None,
@@ -267,7 +337,7 @@ def estimate_conditional_density_mesh(
     Parameters:
     - `x`, `y`: sample coordinates (same length).
     - `given`: `"y"` for f(x|y), `"x"` for f(y|x).
-    - `gridsize`, `cut`: as in `estimate_density_mesh`.
+    - `gridsize`, `x_extent`, `y_extent`, `pad`: as in `estimate_density_mesh`.
     - `weights`: optional per-sample weights.
     - `kernel`: `"scipy"`, `"gaussian"`, or `"epanechnikov"`.
     - `bandwidth`: absolute width, `None` (Scott's rule), or `bw_method(...)`.
@@ -291,7 +361,9 @@ def estimate_conditional_density_mesh(
     X, Y, Z, cell_area, width, weight_values = _joint_density(
         data,
         gridsize=gridsize,
-        cut=cut,
+        x_extent=x_extent,
+        y_extent=y_extent,
+        pad=pad,
         weights=weights,
         kernel=kernel,
         bandwidth=bandwidth,
@@ -395,8 +467,10 @@ def estimate_conditional_ridge(
     y: npt.ArrayLike,
     *,
     given: str = "y",
-    gridsize: int = 200,
-    cut: float = 3.0,
+    gridsize: int | tuple[int, int] = 200,
+    x_extent: tuple[float, float] | None = None,
+    y_extent: tuple[float, float] | None = None,
+    pad: float = 3.0,
     weights: npt.ArrayLike | None = None,
     kernel: str | Kernel = "scipy",
     bandwidth: float | npt.ArrayLike | BandwidthMethod | None = None,
@@ -424,7 +498,7 @@ def estimate_conditional_ridge(
     - `x`, `y`: sample coordinates (same length).
     - `given`: `"y"` returns `x` as a function of `y`; `"x"` returns `y` as a
       function of `x`.
-    - `gridsize`, `cut`: as in `estimate_density_mesh`.
+    - `gridsize`, `x_extent`, `y_extent`, `pad`: as in `estimate_density_mesh`.
     - `weights`: optional per-sample weights.
     - `kernel`: `"scipy"`, an in-library kernel name, or a callable.
     - `bandwidth`: absolute width, `None` (Scott's rule), or `bw_method(...)`.
@@ -462,7 +536,9 @@ def estimate_conditional_ridge(
     X, Y, Z, _, width, _ = _joint_density(
         data,
         gridsize=gridsize,
-        cut=cut,
+        x_extent=x_extent,
+        y_extent=y_extent,
+        pad=pad,
         weights=weights,
         kernel=kernel,
         bandwidth=bandwidth,

@@ -494,10 +494,10 @@ def test_suppress_low_density_is_noop_at_zero():
     assert _suppress_low_density(Z, joint, 0.0) is Z
 
 
-def test_suppress_low_density_masks_below_relative_cut():
+def test_suppress_low_density_masks_below_relative_floor():
     Z = np.ones((3, 3))
     joint = np.arange(9.0).reshape(3, 3)
-    out = _suppress_low_density(Z, joint, 0.5)  # cut = 0.5 * 8 = 4.0
+    out = _suppress_low_density(Z, joint, 0.5)  # floor = 0.5 * 8 = 4.0
     assert np.all(np.isnan(out[joint < 4.0]))
     assert not np.any(np.isnan(out[joint >= 4.0]))
 

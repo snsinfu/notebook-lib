@@ -124,8 +124,8 @@ def _suppress_low_density(
     """
     if min_density <= 0:
         return Z
-    cut = min_density * float(np.max(joint))
-    return np.where(joint < cut, np.nan, Z)
+    floor = min_density * float(np.max(joint))
+    return np.where(joint < floor, np.nan, Z)
 
 
 def _density_contour(
@@ -194,8 +194,10 @@ def kde_contour(
     ax: matplotlib.axes.Axes | None = None,
     *,
     conditional_on: str | None = None,
-    gridsize: int = 200,
-    cut: float = 3.0,
+    gridsize: int | tuple[int, int] = 200,
+    x_extent: tuple[float, float] | None = None,
+    y_extent: tuple[float, float] | None = None,
+    pad: float = 3.0,
     weights: npt.ArrayLike | None = None,
     kernel: str | Kernel = "scipy",
     bandwidth: float | npt.ArrayLike | BandwidthMethod | None = None,
@@ -215,7 +217,9 @@ def kde_contour(
     - `conditional_on`: `None` (default) draws the joint density; `"y"` draws
       the conditional density of `x` given `y` (`f(x|y) = f(x,y)/f(y)`) and
       `"x"` draws `f(y|x)`. Not available with a callable `kernel`.
-    - `gridsize`, `cut`: see `lib.density.estimate_density_mesh`.
+    - `gridsize`, `x_extent`, `y_extent`, `pad`: see
+      `lib.density.estimate_density_mesh`. The extent sets the evaluation
+      window; it does not change the axes limits.
     - `weights`: optional per-sample weights.
     - `kernel`: `"scipy"`, an in-library kernel name, or a callable.
     - `bandwidth`: absolute width, `None` (Scott's rule), or `bw_method(...)`.
@@ -234,7 +238,9 @@ def kde_contour(
             x,
             y,
             gridsize=gridsize,
-            cut=cut,
+            x_extent=x_extent,
+            y_extent=y_extent,
+            pad=pad,
             weights=weights,
             kernel=kernel,
             bandwidth=bandwidth,
@@ -245,7 +251,9 @@ def kde_contour(
             y,
             given=conditional_on,
             gridsize=gridsize,
-            cut=cut,
+            x_extent=x_extent,
+            y_extent=y_extent,
+            pad=pad,
             weights=weights,
             kernel=kernel,
             bandwidth=bandwidth,
