@@ -9,9 +9,9 @@ from __future__ import annotations
 from .bandwidth import BandwidthMethod, bw_method, resolve_bandwidth
 from .estimate import (
     enclosed_thresholds,
-    estimate_conditional_density,
-    estimate_density,
+    estimate_conditional_density_mesh,
     estimate_density_at,
+    estimate_density_mesh,
 )
 from .kernels import (
     make_epanechnikov_kernel,
@@ -32,9 +32,9 @@ __all__ = [
     "BandwidthMethod",
     "bw_method",
     "enclosed_thresholds",
-    "estimate_conditional_density",
-    "estimate_density",
+    "estimate_conditional_density_mesh",
     "estimate_density_at",
+    "estimate_density_mesh",
     "kernel_flux",
     "kernel_regression",
     "kernel_regression_at",

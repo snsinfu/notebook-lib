@@ -5,8 +5,8 @@ from lib.density import (
     BandwidthMethod,
     bw_method,
     enclosed_thresholds,
-    estimate_conditional_density,
-    estimate_density,
+    estimate_conditional_density_mesh,
+    estimate_density_mesh,
     make_epanechnikov_kernel,
     make_gaussian_kernel,
     resolve_bandwidth,
@@ -66,17 +66,17 @@ def test_kernel_flux_rejects_short_sequence():
         kernel_flux(points, sequence, kernel_fn=make_gaussian_kernel(2))
 
 
-def test_estimate_density_grid_integrates_to_one(rng):
+def test_estimate_density_mesh_integrates_to_one(rng):
     x = rng.normal(size=500)
     y = rng.normal(size=500)
-    _, _, Z, cell_area = estimate_density(x, y, gridsize=200)
+    _, _, Z, cell_area = estimate_density_mesh(x, y, gridsize=200)
     assert np.isclose(Z.sum() * cell_area, 1.0, atol=0.02)
 
 
-def test_estimate_density_kernel_integrates_to_one(rng):
+def test_estimate_density_mesh_kernel_integrates_to_one(rng):
     x = rng.normal(size=500)
     y = rng.normal(size=500)
-    _, _, Z, cell_area = estimate_density(
+    _, _, Z, cell_area = estimate_density_mesh(
         x, y, gridsize=200, kernel="epanechnikov", bandwidth=0.5
     )
     assert np.isclose(Z.sum() * cell_area, 1.0, atol=0.05)
@@ -133,13 +133,13 @@ def test_enclosed_thresholds_ordering():
 
 
 @pytest.mark.parametrize("given", ["x", "y"])
-def test_estimate_conditional_density_slices_integrate_to_one(rng, given):
+def test_estimate_conditional_density_mesh_slices_integrate_to_one(rng, given):
     # f(x|y) integrates to one over x (and f(y|x) over y) when the marginal
     # shares the joint's bandwidth. Check the central slices away from the grid
     # padding where the truncated window still captures the mass.
     y = rng.normal(size=1000)
     x = 0.8 * y + rng.normal(size=1000)
-    X, Y, Z, _ = estimate_conditional_density(x, y, given=given, gridsize=200)
+    X, Y, Z, _ = estimate_conditional_density_mesh(x, y, given=given, gridsize=200)
     if given == "y":
         integrals = Z.sum(axis=1) * (X[0, 1] - X[0, 0])
     else:
@@ -149,27 +149,27 @@ def test_estimate_conditional_density_slices_integrate_to_one(rng, given):
 
 
 @pytest.mark.parametrize("given", ["x", "y"])
-def test_estimate_conditional_density_compact_kernel_is_finite(rng, given):
+def test_estimate_conditional_density_mesh_compact_kernel_is_finite(rng, given):
     # Epanechnikov has bounded support; the zero-marginal region must not
     # produce nan/inf in the ratio.
     y = rng.normal(size=1000)
     x = 0.8 * y + rng.normal(size=1000)
-    _, _, Z, _ = estimate_conditional_density(
+    _, _, Z, _ = estimate_conditional_density_mesh(
         x, y, given=given, kernel="epanechnikov", bandwidth=0.5
     )
     assert np.all(np.isfinite(Z))
     assert np.all(Z >= 0)
 
 
-def test_estimate_conditional_density_rejects_callable_kernel(rng):
+def test_estimate_conditional_density_mesh_rejects_callable_kernel(rng):
     x = rng.normal(size=50)
     y = rng.normal(size=50)
     with pytest.raises(TypeError):
-        estimate_conditional_density(x, y, kernel=lambda points: points)
+        estimate_conditional_density_mesh(x, y, kernel=lambda points: points)
 
 
-def test_estimate_conditional_density_rejects_bad_given(rng):
+def test_estimate_conditional_density_mesh_rejects_bad_given(rng):
     x = rng.normal(size=50)
     y = rng.normal(size=50)
     with pytest.raises(ValueError):
-        estimate_conditional_density(x, y, given="z")
+        estimate_conditional_density_mesh(x, y, given="z")

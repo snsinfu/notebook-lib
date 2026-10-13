@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import scipy.stats
 
-from lib.density import estimate_density
+from lib.density import estimate_density_mesh
 from lib.plot import (
     attach_colorbar,
     bw_method,
@@ -471,7 +471,7 @@ def test_kde_contour_conditional_rejects_callable_kernel(rng):
 def test_density_contour_returns_contourset(rng):
     x = rng.normal(size=300)
     y = rng.normal(size=300)
-    X, Y, Z, cell_area = estimate_density(x, y)
+    X, Y, Z, cell_area = estimate_density_mesh(x, y)
     _, ax = plt.subplots()
     contour_set = _density_contour(X, Y, Z, levels=[0.5], ax=ax, cell_area=cell_area)
     assert contour_set is not None

@@ -16,9 +16,9 @@ import numpy.typing as npt
 from ..density.bandwidth import BandwidthMethod
 from ..density.estimate import (
     enclosed_thresholds,
-    estimate_conditional_density,
-    estimate_density,
+    estimate_conditional_density_mesh,
     estimate_density_at,
+    estimate_density_mesh,
 )
 from ..density.kernels import Kernel
 
@@ -110,7 +110,7 @@ def _density_contour(
 
     Private low-level counterpart of `kde_contour`: it assumes `Z` is already
     evaluated on the mesh `X`, `Y` (as produced by
-    `lib.density.estimate_density`), so any custom or modified density can be
+    `lib.density.estimate_density_mesh`), so any custom or modified density can be
     drawn in the same style. `levels` is the tail probability mass in `(0, 1)`:
     the fraction of mass lying outside each contour, so the enclosed region
     holds `1 - level`. The geometry is invariant to the overall scale of `Z`,
@@ -170,7 +170,7 @@ def kde_contour(
     - `conditional_on`: `None` (default) draws the joint density; `"y"` draws
       the conditional density of `x` given `y` (`f(x|y) = f(x,y)/f(y)`) and
       `"x"` draws `f(y|x)`. Not available with a callable `kernel`.
-    - `gridsize`, `cut`: see `lib.density.estimate_density`.
+    - `gridsize`, `cut`: see `lib.density.estimate_density_mesh`.
     - `weights`: optional per-sample weights.
     - `kernel`: `"scipy"`, an in-library kernel name, or a callable.
     - `bandwidth`: absolute width, `None` (Scott's rule), or `bw_method(...)`.
@@ -180,7 +180,7 @@ def kde_contour(
     Returns the drawn contour set; its `.levels` holds the density thresholds.
     """
     if conditional_on is None:
-        X, Y, Z, cell_area = estimate_density(
+        X, Y, Z, cell_area = estimate_density_mesh(
             x,
             y,
             gridsize=gridsize,
@@ -190,7 +190,7 @@ def kde_contour(
             bandwidth=bandwidth,
         )
     elif isinstance(kernel, str):
-        X, Y, Z, cell_area = estimate_conditional_density(
+        X, Y, Z, cell_area = estimate_conditional_density_mesh(
             x,
             y,
             given=conditional_on,

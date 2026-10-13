@@ -103,11 +103,11 @@ def _joint_density(
     """
     Evaluate a 2-D KDE on a regular grid of `data` of shape `(2, n)`.
 
-    Shared by `estimate_density` and `estimate_conditional_density`. Returns
-    `(X, Y, Z, cell_area, width, weight_values)`: the meshgrid coordinates, the
-    density, the area of one grid cell, the per-axis bandwidth, and the
-    validated weights. `width` is resolved from the 2-D data, so heuristics use
-    the 2-D Scott/Silverman factor.
+    Shared by `estimate_density_mesh` and `estimate_conditional_density_mesh`.
+    Returns `(X, Y, Z, cell_area, width, weight_values)`: the meshgrid
+    coordinates, the density, the area of one grid cell, the per-axis bandwidth,
+    and the validated weights. `width` is resolved from the 2-D data, so
+    heuristics use the 2-D Scott/Silverman factor.
     """
     if data.shape[1] < 2:
         raise ValueError("need at least two samples to fit a KDE")
@@ -142,7 +142,7 @@ def _joint_density(
     return X, Y, Z, float(cell_area), width, weight_values
 
 
-def estimate_density(
+def estimate_density_mesh(
     x: npt.ArrayLike,
     y: npt.ArrayLike,
     *,
@@ -204,7 +204,7 @@ def _marginal_density(
     )
 
 
-def estimate_conditional_density(
+def estimate_conditional_density_mesh(
     x: npt.ArrayLike,
     y: npt.ArrayLike,
     *,
@@ -229,7 +229,7 @@ def estimate_conditional_density(
     Parameters:
     - `x`, `y`: sample coordinates (same length).
     - `given`: `"y"` for f(x|y), `"x"` for f(y|x).
-    - `gridsize`, `cut`: as in `estimate_density`.
+    - `gridsize`, `cut`: as in `estimate_density_mesh`.
     - `weights`: optional per-sample weights.
     - `kernel`: `"scipy"`, `"gaussian"`, or `"epanechnikov"`.
     - `bandwidth`: absolute width, `None` (Scott's rule), or `bw_method(...)`.

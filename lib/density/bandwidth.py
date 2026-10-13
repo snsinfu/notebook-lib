@@ -93,7 +93,7 @@ def bw_method(value: str | float) -> BandwidthMethod:
       Both follow `scipy.stats.gaussian_kde`'s `bw_method` convention.
 
     Pass the result as the `bandwidth` of `kde_at`, `kde_contour`, or
-    `estimate_density`.
+    `estimate_density_mesh`.
     """
     if isinstance(value, str):
         if value in {"scott", "silverman"}:
