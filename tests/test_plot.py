@@ -459,6 +459,25 @@ def test_kde_contour_accepts_kernel(rng):
     plt.close(ax.figure)
 
 
+@pytest.mark.parametrize("conditional_on", [None, "y"])
+def test_kde_contour_grid_kwargs(rng, conditional_on):
+    x = rng.normal(size=300)
+    y = 0.8 * x + rng.normal(size=300)
+    _, ax = plt.subplots()
+    contour_set = kde_contour(
+        x,
+        y,
+        levels=[0.5],
+        ax=ax,
+        conditional_on=conditional_on,
+        gridsize=(80, 40),
+        x_extent=(-4.0, 4.0),
+        y_extent=(-4.0, 4.0),
+    )
+    assert contour_set is not None
+    plt.close(ax.figure)
+
+
 def test_kde_contour_conditional_rejects_callable_kernel(rng):
     x = rng.normal(size=50)
     y = rng.normal(size=50)

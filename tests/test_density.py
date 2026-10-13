@@ -91,6 +91,58 @@ def test_estimate_density_mesh_kernel_integrates_to_one(rng):
     assert np.isclose(Z.sum() * aux.cell_area, 1.0, atol=0.05)
 
 
+def test_estimate_density_mesh_per_axis_gridsize(rng):
+    x = rng.normal(size=500)
+    y = rng.normal(size=500)
+    X, Y, Z, aux = estimate_density_mesh(x, y, gridsize=(160, 100))
+    assert X.shape == Y.shape == Z.shape == (100, 160)
+    assert np.isclose(Z.sum() * aux.cell_area, 1.0, atol=0.02)
+
+
+def test_estimate_density_mesh_explicit_extent(rng):
+    x = rng.normal(size=500)
+    y = rng.normal(size=500)
+    X, Y, Z, aux = estimate_density_mesh(
+        x, y, gridsize=160, x_extent=(-6.0, 6.0), y_extent=(-5.0, 5.0)
+    )
+    assert (X[0, 0], X[0, -1]) == (-6.0, 6.0)
+    assert (Y[0, 0], Y[-1, 0]) == (-5.0, 5.0)
+    assert np.isclose(Z.sum() * aux.cell_area, 1.0, atol=0.02)
+
+
+def test_estimate_density_mesh_partial_extent(rng):
+    x = rng.normal(size=500)
+    y = rng.normal(size=500) + 3.0
+    X, Y, _, _ = estimate_density_mesh(x, y, x_extent=(-2.0, 2.0))
+    assert (X[0, 0], X[0, -1]) == (-2.0, 2.0)
+    # The y axis is still auto-padded beyond the data range.
+    assert Y[0, 0] < y.min() < y.max() < Y[-1, 0]
+
+
+@pytest.mark.parametrize("gridsize", [1, (2, 1), (2,), (2.0, 3.0), "200"])
+def test_estimate_density_mesh_rejects_bad_gridsize(rng, gridsize):
+    x = rng.normal(size=50)
+    y = rng.normal(size=50)
+    with pytest.raises((TypeError, ValueError)):
+        estimate_density_mesh(x, y, gridsize=gridsize)
+
+
+@pytest.mark.parametrize("extent", [(1.0, 1.0), (2.0, 1.0), (1.0,), (np.inf, 2.0)])
+def test_estimate_density_mesh_rejects_bad_extent(rng, extent):
+    x = rng.normal(size=50)
+    y = rng.normal(size=50)
+    with pytest.raises(ValueError):
+        estimate_density_mesh(x, y, x_extent=extent)
+
+
+@pytest.mark.parametrize("pad", [-1.0, np.inf, np.nan])
+def test_estimate_density_mesh_rejects_bad_pad(rng, pad):
+    x = rng.normal(size=50)
+    y = rng.normal(size=50)
+    with pytest.raises(ValueError):
+        estimate_density_mesh(x, y, pad=pad)
+
+
 def test_estimate_conditional_density_mesh_aux_joint_matches_joint(rng):
     x = rng.normal(size=500)
     y = 0.8 * x + rng.normal(size=500)
@@ -98,6 +150,17 @@ def test_estimate_conditional_density_mesh_aux_joint_matches_joint(rng):
     _, _, Z_joint, joint = estimate_density_mesh(x, y, gridsize=100)
     assert cond.cell_area == joint.cell_area
     assert np.allclose(cond.joint, Z_joint)
+
+
+@pytest.mark.parametrize("given", ["x", "y"])
+def test_estimate_conditional_density_mesh_per_axis_gridsize(rng, given):
+    x = rng.normal(size=300)
+    y = 0.8 * x + rng.normal(size=300)
+    X, Y, Z, _ = estimate_conditional_density_mesh(
+        x, y, given=given, gridsize=(120, 80)
+    )
+    assert X.shape == Y.shape == Z.shape == (80, 120)
+    assert np.all(np.isfinite(Z))
 
 
 def test_bw_method_scott_matches_default(rng):
@@ -202,6 +265,19 @@ def test_estimate_conditional_ridge_aux_shapes(rng):
     assert aux.contrast.shape == (64,)
     assert aux.n_modes.dtype.kind in "iu"
     assert np.all(np.isfinite(aux.contrast))
+
+
+@pytest.mark.parametrize("given", ["x", "y"])
+def test_estimate_conditional_ridge_per_axis_length(rng, given):
+    y = rng.normal(size=500)
+    x = 0.8 * y + 0.4 * rng.normal(size=500)
+    ridge_x, ridge_y, aux = estimate_conditional_ridge(
+        x, y, given=given, gridsize=(64, 100)
+    )
+    # The ridge follows the conditioning axis: nx for given="x", ny for "y".
+    expected = 64 if given == "x" else 100
+    assert ridge_x.shape == ridge_y.shape == (expected,)
+    assert aux.support.shape == (expected,)
 
 
 def test_estimate_conditional_ridge_recovers_linear(rng):
