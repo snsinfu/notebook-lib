@@ -18,6 +18,7 @@ from .axes import (
 from .colors import (
     OkLAB,
     cm_bkr,
+    cm_wjr,
     cm_wrr,
     lerp_palette,
     oklab_to_rgb,
@@ -44,6 +45,7 @@ __all__ = [
     "attach_colorbar",
     "bw_method",
     "cm_bkr",
+    "cm_wjr",
     "cm_wrr",
     "get_x_grid_line_at",
     "get_y_grid_line_at",

@@ -14,6 +14,7 @@ from lib.plot import (
     OkLAB,
     attach_colorbar,
     bw_method,
+    cm_wjr,
     get_x_grid_line_at,
     get_y_grid_line_at,
     kde_at,
@@ -478,6 +479,15 @@ def test_register_colormaps_registers_names():
     register_colormaps()
     assert "wrr" in matplotlib.colormaps
     assert "bkr" in matplotlib.colormaps
+    assert "wjr" in matplotlib.colormaps
+
+
+def test_cm_wjr_endpoints():
+    assert isinstance(cm_wjr, matplotlib.colors.LinearSegmentedColormap)
+    assert cm_wjr.name == "wjr"
+    assert cm_wjr.N == 256
+    assert np.allclose(cm_wjr(0.0), (1.0, 1.0, 1.0, 1.0), atol=1e-6)
+    assert np.allclose(cm_wjr(1.0), (1.0, 0.63, 0.58, 1.0), atol=1e-6)
 
 
 def test_slice_cmap_trims_linear_colormap():

@@ -226,13 +226,24 @@ cm_bkr = matplotlib.colors.LinearSegmentedColormap.from_list(
     "bkr", [(0, 0, 1), (0, 0, 0), (1, 0, 0)]
 )
 
+# White to light gray to salmon colormap, interpolated in OkLab.
+cm_wjr = matplotlib.colors.LinearSegmentedColormap.from_list(
+    "wjr",
+    lerp_palette(
+        [(1.0, 1.0, 1.0), (0.9, 0.9, 0.9), (1.0, 0.63, 0.58)],
+        ndiv=256,
+        colorspace="oklab",
+    ),
+)
+
 
 def register_colormaps() -> None:
     """
-    Register `cm_wrr` and `cm_bkr` with matplotlib under their names.
+    Register `cm_wrr`, `cm_bkr` and `cm_wjr` with matplotlib under their names.
     """
     register_cmap(cm_wrr)
     register_cmap(cm_bkr)
+    register_cmap(cm_wjr)
 
 
 def _oklab_distance(x: OkLAB, y: OkLAB) -> float:
