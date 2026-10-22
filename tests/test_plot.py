@@ -21,10 +21,12 @@ from lib.plot import (
     kde_contour,
     lerp_palette,
     make_triu_mesh,
+    matrix_cell_coords,
     oklab_to_rgb,
     register_colormaps,
     rgb_to_oklab,
     set_axis,
+    set_table_axis,
     slice_cmap,
     smooth_matrix,
     texsci,
@@ -293,6 +295,25 @@ def test_smooth_matrix_rejects_negative_sigma():
         smooth_matrix(np.ones((5, 5)), -1.0)
 
 
+def test_matrix_cell_coords_values():
+    x, y = matrix_cell_coords((2, 3))
+    assert x.shape == y.shape == (2, 3)
+    assert np.array_equal(x, [[0, 1, 2], [0, 1, 2]])
+    assert np.array_equal(y, [[0, 0, 0], [1, 1, 1]])
+
+
+def test_matrix_cell_coords_supports_masking():
+    x, y = matrix_cell_coords((2, 3))
+    selection = np.array([[True, False, False], [False, True, False]])
+    assert np.array_equal(x[selection], [0, 1])
+    assert np.array_equal(y[selection], [0, 1])
+
+
+def test_matrix_cell_coords_rejects_negative_shape():
+    with pytest.raises(ValueError):
+        matrix_cell_coords((-1, 3))
+
+
 def test_transform_triu_coords_known_values():
     x, y = transform_triu_coords([0, 1, 2], [0, 2, 1])
     assert np.allclose(x, [0.0, 1.5, 1.5])
@@ -409,6 +430,124 @@ def test_set_axis_rejects_unknown_side():
     _, ax = plt.subplots()
     with pytest.raises(ValueError):
         set_axis(ax, spines="topleft")
+    plt.close(ax.figure)
+
+
+def test_set_axis_labels_default_to_ticks():
+    _, ax = plt.subplots()
+    ax.set_xticks([0.0, 1.0])
+    ax.set_yticks([0.0, 1.0])
+    set_axis(ax, spines="left bottom", ticks="top left")
+    ax.figure.canvas.draw()
+
+    xtick = ax.xaxis.majorTicks[0]
+    ytick = ax.yaxis.majorTicks[0]
+    assert xtick.label2.get_visible()
+    assert ytick.label1.get_visible()
+    assert xtick.tick2line.get_visible()
+    assert ytick.tick1line.get_visible()
+    plt.close(ax.figure)
+
+
+def test_set_axis_labels_without_ticks():
+    _, ax = plt.subplots()
+    ax.set_xticks([0.0, 1.0])
+    ax.set_yticks([0.0, 1.0])
+    set_axis(ax, ticks="none", labels="top left")
+    ax.figure.canvas.draw()
+
+    xtick = ax.xaxis.majorTicks[0]
+    ytick = ax.yaxis.majorTicks[0]
+    assert xtick.label2.get_visible()
+    assert ytick.label1.get_visible()
+    assert not xtick.tick1line.get_visible()
+    assert not xtick.tick2line.get_visible()
+    assert not ytick.tick1line.get_visible()
+    assert not ytick.tick2line.get_visible()
+    plt.close(ax.figure)
+
+
+def test_set_axis_labels_can_differ_from_ticks():
+    _, ax = plt.subplots()
+    ax.set_xticks([0.0, 1.0])
+    ax.set_yticks([0.0, 1.0])
+    set_axis(ax, ticks="top left", labels="bottom left")
+    ax.figure.canvas.draw()
+
+    xtick = ax.xaxis.majorTicks[0]
+    assert xtick.label1.get_visible()
+    assert not xtick.label2.get_visible()
+    assert xtick.tick2line.get_visible()
+    assert not xtick.tick1line.get_visible()
+    assert not ax.yaxis.get_inverted()
+    plt.close(ax.figure)
+
+
+def test_set_axis_labels_none_falls_back_to_ticks():
+    _, ax = plt.subplots()
+    ax.set_xticks([0.0, 1.0])
+    ax.set_yticks([0.0, 1.0])
+    set_axis(ax, ticks="top left", labels="none")
+    ax.figure.canvas.draw()
+
+    xtick = ax.xaxis.majorTicks[0]
+    assert not xtick.label1.get_visible()
+    assert not xtick.label2.get_visible()
+    assert xtick.tick2line.get_visible()
+    assert ax.yaxis.get_inverted()
+    plt.close(ax.figure)
+
+
+def test_set_table_axis_ticks_and_labels():
+    _, ax = plt.subplots()
+    ax.matshow(np.zeros((2, 3)))
+    set_table_axis(ax, rows=["r0", "r1"], cols=["c0", "c1", "c2"])
+    ax.figure.canvas.draw()
+
+    assert np.array_equal(ax.get_xticks(), [0, 1, 2])
+    assert np.array_equal(ax.get_yticks(), [0, 1])
+    assert [t.get_text() for t in ax.get_xticklabels()] == ["c0", "c1", "c2"]
+    assert [t.get_text() for t in ax.get_yticklabels()] == ["r0", "r1"]
+    assert np.array_equal(ax.xaxis.get_minorticklocs(), [0.5, 1.5])
+    assert np.array_equal(ax.yaxis.get_minorticklocs(), [0.5])
+
+    xtick = ax.xaxis.majorTicks[0]
+    ytick = ax.yaxis.majorTicks[0]
+    assert xtick.label2.get_visible()
+    assert ytick.label1.get_visible()
+    assert not xtick.tick1line.get_visible()
+    assert not xtick.tick2line.get_visible()
+    assert not ytick.tick1line.get_visible()
+    assert not ytick.tick2line.get_visible()
+    assert ax.yaxis.get_inverted()
+    plt.close(ax.figure)
+
+
+def test_set_table_axis_does_not_draw_grid():
+    _, ax = plt.subplots()
+    ax.matshow(np.zeros((2, 3)))
+    set_table_axis(ax, rows=["r0", "r1"], cols=["c0", "c1", "c2"])
+    ax.figure.canvas.draw()
+
+    assert not any(tick.gridline.get_visible() for tick in ax.xaxis.minorTicks)
+    assert not any(tick.gridline.get_visible() for tick in ax.yaxis.minorTicks)
+    plt.close(ax.figure)
+
+
+@pytest.mark.parametrize("rows,cols", [([], ["c0"]), (["r0"], [])])
+def test_set_table_axis_rejects_empty_labels(rows, cols):
+    _, ax = plt.subplots()
+    with pytest.raises(ValueError):
+        set_table_axis(ax, rows=rows, cols=cols)
+    plt.close(ax.figure)
+
+
+def test_set_table_axis_matshow_smoke():
+    _, ax = plt.subplots()
+    ax.matshow(np.zeros((2, 3)))
+    set_table_axis(ax, rows=["r0", "r1"], cols=["c0", "c1", "c2"])
+    ax.grid(True, which="minor", lw=0.5, ls="-", color="w")
+    ax.figure.canvas.draw()
     plt.close(ax.figure)
 
 

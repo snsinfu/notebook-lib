@@ -24,6 +24,22 @@ def smooth_matrix(matrix: np.ndarray, sigma: float) -> np.ndarray:
     )
 
 
+def matrix_cell_coords(shape: tuple[int, int]) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Return `(x, y)` data coordinates of matrix cell centers.
+
+    `x` is the column index and `y` the row index; both arrays have shape
+    `(nrows, ncols)`. The coordinates match `Axes.matshow` and the default
+    `Axes.imshow` extent. Offsets are not applied: add fractions of a cell to
+    place an annotation off center, for example `X[mask] + 0.4` and
+    `Y[mask] - 0.25`.
+    """
+    nrows, ncols = shape
+    if nrows < 0 or ncols < 0:
+        raise ValueError("shape entries must be nonnegative")
+    return np.meshgrid(np.arange(ncols), np.arange(nrows))
+
+
 def transform_triu_coords(
     i: npt.ArrayLike, j: npt.ArrayLike
 ) -> tuple[np.ndarray, np.ndarray]:

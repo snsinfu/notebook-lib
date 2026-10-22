@@ -13,6 +13,7 @@ from .axes import (
     get_y_grid_line_at,
     make_scaled_formatter,
     set_axis,
+    set_table_axis,
     update_plot,
 )
 from .colormaps import cm_bkr, cm_wjr, cm_wrr, register_colormaps
@@ -31,7 +32,12 @@ from .logticks import (
     LogTicksLocator,
     use_log_ticks,
 )
-from .matrix import make_triu_mesh, smooth_matrix, transform_triu_coords
+from .matrix import (
+    make_triu_mesh,
+    matrix_cell_coords,
+    smooth_matrix,
+    transform_triu_coords,
+)
 from .patches import attach_colorbar, plot_arc, plot_rect
 from .text import texsci
 
@@ -51,6 +57,7 @@ __all__ = [
     "lerp_palette",
     "make_scaled_formatter",
     "make_triu_mesh",
+    "matrix_cell_coords",
     "oklab_to_rgb",
     "plot_arc",
     "plot_rect",
@@ -59,6 +66,7 @@ __all__ = [
     "register_cycle_palette",
     "rgb_to_oklab",
     "set_axis",
+    "set_table_axis",
     "slice_cmap",
     "smooth_matrix",
     "texsci",
