@@ -15,15 +15,12 @@ from .axes import (
     set_axis,
     update_plot,
 )
+from .colormaps import cm_bkr, cm_wjr, cm_wrr, register_colormaps
 from .colors import (
     OkLAB,
-    cm_bkr,
-    cm_wjr,
-    cm_wrr,
     lerp_palette,
     oklab_to_rgb,
     register_cmap,
-    register_colormaps,
     register_cycle_palette,
     rgb_to_oklab,
     slice_cmap,
