@@ -18,6 +18,7 @@ from lib.plot import (
     get_y_grid_line_at,
     kde_at,
     kde_contour,
+    lerp_palette,
     oklab_to_rgb,
     register_colormaps,
     rgb_to_oklab,
@@ -394,6 +395,70 @@ def test_oklab_to_rgb_red():
 def test_rgb_oklab_roundtrip(rng):
     for rgb in rng.uniform(0.0, 1.0, size=(10, 3)):
         assert np.allclose(oklab_to_rgb(*rgb_to_oklab(*rgb)), rgb, atol=1e-5)
+
+
+def test_lerp_palette_dict_hits_nodes():
+    got = lerp_palette({0.0: "black", 1.0: "white"}, ndiv=3)
+    assert np.allclose(got, [(0, 0, 0, 1), (0.5, 0.5, 0.5, 1), (1, 1, 1, 1)])
+
+
+def test_lerp_palette_sequence_is_uniform():
+    got = lerp_palette(["black", "white"], ndiv=3)
+    expected = lerp_palette({0.0: "black", 1.0: "white"}, ndiv=3)
+    assert np.allclose(got, expected)
+
+
+@pytest.mark.parametrize(
+    "knot",
+    [(1.0, 0.0, 0.0), (1.0, 0.0, 0.0, 1.0), "red", rgb_to_oklab(1.0, 0.0, 0.0)],
+)
+def test_lerp_palette_accepts_color_forms(knot):
+    got = lerp_palette([knot, "white"], ndiv=3)
+    assert np.allclose(got[0], (1.0, 0.0, 0.0, 1.0), atol=1e-6)
+
+
+def test_lerp_palette_oklab_hits_endpoints():
+    got = lerp_palette(
+        [(1.0, 1.0, 1.0), (1.0, 0.63, 0.58)], ndiv=256, colorspace="oklab"
+    )
+    assert np.allclose(got[0], (1.0, 1.0, 1.0, 1.0), atol=1e-6)
+    assert np.allclose(got[-1], (1.0, 0.63, 0.58, 1.0), atol=1e-6)
+
+
+def test_lerp_palette_oklab_accepts_oklab_knots():
+    rgb_knot = (1.0, 0.0, 0.0)
+    expected = lerp_palette([rgb_knot, "white"], ndiv=5, colorspace="oklab")
+    got = lerp_palette([rgb_to_oklab(*rgb_knot), "white"], ndiv=5, colorspace="oklab")
+    assert np.allclose(got, expected)
+
+
+def test_lerp_palette_oklab_differs_from_rgb():
+    knots = [(1.0, 0.0, 0.0), (0.0, 0.0, 0.0)]
+    rgb = lerp_palette(knots, ndiv=3, colorspace="rgb")
+    oklab = lerp_palette(knots, ndiv=3, colorspace="oklab")
+    assert not np.allclose(rgb[1], oklab[1])
+
+
+def test_lerp_palette_oklab_interpolates_alpha():
+    got = lerp_palette(
+        [rgb_to_oklab(1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0)],
+        ndiv=3,
+        colorspace="oklab",
+    )
+    assert np.isclose(got[0, 3], 1.0)
+    assert np.isclose(got[1, 3], 0.5)
+    assert np.isclose(got[-1, 3], 0.0)
+
+
+def test_lerp_palette_single_node():
+    got = lerp_palette(["red"], ndiv=3)
+    assert got.shape == (3, 4)
+    assert np.allclose(got, (1.0, 0.0, 0.0, 1.0))
+
+
+def test_lerp_palette_rejects_unknown_colorspace():
+    with pytest.raises(ValueError):
+        lerp_palette(["black", "white"], colorspace="lab")
 
 
 def test_import_does_not_register_colormaps():

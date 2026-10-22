@@ -6,12 +6,13 @@ from __future__ import annotations
 
 import typing
 from collections.abc import Iterable, Sequence
-from typing import Any
+from typing import Any, Literal
 
 import matplotlib.cm
 import matplotlib.colors
 import matplotlib.pyplot as plt
 import numpy as np
+import scipy.interpolate
 
 
 def register_cmap(cm: matplotlib.colors.Colormap) -> matplotlib.colors.Colormap:
@@ -27,18 +28,51 @@ def register_cmap(cm: matplotlib.colors.Colormap) -> matplotlib.colors.Colormap:
 
 
 def lerp_palette(
-    nodes: dict[float, Any],
+    nodes: dict[float, Any] | Sequence[Any],
     ndiv: int = 20,
+    *,
+    colorspace: Literal["rgb", "oklab"] = "rgb",
 ) -> np.ndarray:
     """
-    Linearly interpolate color `nodes` into `ndiv` RGBA colors.
+    Interpolate color `nodes` into `ndiv` RGBA colors.
+
+    `nodes` is a mapping from positions to colors, or a sequence of colors at
+    uniformly spaced positions in `[0, 1]`. A color is an `(r, g, b)` or
+    `(r, g, b, a)` triple, a color name, or an `OkLAB` object (alpha 1).
+    `colorspace="oklab"` blends in OkLab and clips to the sRGB gamut;
+    `"rgb"` blends the gamma-encoded RGBA channels linearly (matplotlib's
+    convention, no linearization). A single node is constant.
     """
-    points = np.array(sorted(nodes.keys()))
-    colors = np.array([matplotlib.colors.to_rgba(nodes[key]) for key in points])
+    if colorspace not in ("rgb", "oklab"):
+        raise ValueError(f"unknown colorspace {colorspace!r}")
+
+    if isinstance(nodes, dict):
+        keys = sorted(nodes)
+        points = np.array(keys, dtype=float)
+        colors = [nodes[key] for key in keys]
+    else:
+        colors = list(nodes)
+        points = np.linspace(0.0, 1.0, len(colors))
+
+    if len(points) == 0:
+        raise ValueError("require at least one color node")
+
+    if colorspace == "oklab":
+        parsed = [_to_oklab(color) for color in colors]
+        values = np.array([(c.l, c.a, c.b, alpha) for c, alpha in parsed])
+    else:
+        values = np.array([_to_rgba(color) for color in colors])
+
     x = np.linspace(points[0], points[-1], num=ndiv)
-    return np.transpose(
-        [np.interp(x, points, colors[:, i]) for i in range(colors.shape[1])]
-    )
+    if len(points) == 1:
+        return np.repeat(values, ndiv, axis=0)
+
+    interpolated = scipy.interpolate.interp1d(points, values, axis=0, kind="linear")(x)
+
+    if colorspace == "oklab":
+        rgb = np.array([oklab_to_rgb(*row[:3]) for row in interpolated])
+        interpolated = np.column_stack([np.clip(rgb, 0.0, 1.0), interpolated[:, 3]])
+    return interpolated
 
 
 def _slice_linear_cmap(
@@ -153,6 +187,25 @@ def oklab_to_rgb(L: float, a: float, b: float) -> tuple[float, float, float]:
         _linear_to_srgb(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s),
         _linear_to_srgb(-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s),
     )
+
+
+def _to_oklab(color: Any) -> tuple[OkLAB, float]:
+    """
+    Convert a color specification to OkLab and alpha.
+    """
+    if isinstance(color, OkLAB):
+        return color, 1.0
+    r, g, b, alpha = matplotlib.colors.to_rgba(color)
+    return rgb_to_oklab(r, g, b), alpha
+
+
+def _to_rgba(color: Any) -> tuple[float, float, float, float]:
+    """
+    Convert a color specification to RGBA, accepting OkLab inputs.
+    """
+    if isinstance(color, OkLAB):
+        return (*oklab_to_rgb(*color), 1.0)
+    return matplotlib.colors.to_rgba(color)
 
 
 # "fall" colormap with nicer extrema, nice for showing contact heat map.
