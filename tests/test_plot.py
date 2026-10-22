@@ -20,6 +20,7 @@ from lib.plot import (
     kde_at,
     kde_contour,
     lerp_palette,
+    make_triu_mesh,
     oklab_to_rgb,
     register_colormaps,
     rgb_to_oklab,
@@ -27,6 +28,7 @@ from lib.plot import (
     slice_cmap,
     smooth_matrix,
     texsci,
+    transform_triu_coords,
     use_log_ticks,
 )
 from lib.plot.density import _density_contour, _suppress_low_density
@@ -289,6 +291,101 @@ def test_smooth_matrix_preserves_shape():
 def test_smooth_matrix_rejects_negative_sigma():
     with pytest.raises(ValueError):
         smooth_matrix(np.ones((5, 5)), -1.0)
+
+
+def test_transform_triu_coords_known_values():
+    x, y = transform_triu_coords([0, 1, 2], [0, 2, 1])
+    assert np.allclose(x, [0.0, 1.5, 1.5])
+    assert np.allclose(y, [0.0, 1.0, -1.0])
+
+
+def test_transform_triu_coords_cell_center():
+    x, y = transform_triu_coords(0.5, 0.5)
+    assert np.isclose(x, 0.5)
+    assert np.isclose(y, 0.0)
+
+
+def test_make_triu_mesh_shapes():
+    X, Y, C = make_triu_mesh(np.arange(9.0).reshape(3, 3))
+    assert X.shape == (4, 4)
+    assert Y.shape == (4, 4)
+    assert C.shape == (3, 3)
+    assert np.ma.isMaskedArray(C)
+
+
+def test_make_triu_mesh_default_keeps_diagonal():
+    _, _, C = make_triu_mesh(np.arange(9.0).reshape(3, 3))
+    expected = np.tril(np.ones((3, 3), dtype=bool), -1)
+    assert np.array_equal(np.ma.getmaskarray(C), expected)
+    assert not C.mask[0, 0]
+    assert C.mask[1, 0]
+
+
+@pytest.mark.parametrize("mask_diagonals", [0, 1, 2])
+def test_make_triu_mesh_mask_diagonals(mask_diagonals):
+    _, _, C = make_triu_mesh(np.ones((3, 3)), mask_diagonals=mask_diagonals)
+    expected = np.tril(np.ones((3, 3), dtype=bool), k=mask_diagonals - 1)
+    assert np.array_equal(np.ma.getmaskarray(C), expected)
+
+
+def test_make_triu_mesh_custom_edges():
+    X, Y, _ = make_triu_mesh(np.ones((2, 2)), edges=[0.0, 1.0, 3.0])
+    assert np.allclose([X[0, 0], Y[0, 0]], [0.0, 0.0])
+    assert np.allclose([X[0, 2], Y[0, 2]], [1.5, 3.0])
+    assert np.allclose([X[2, 2], Y[2, 2]], [3.0, 0.0])
+
+
+def test_make_triu_mesh_preserves_existing_mask():
+    matrix = np.ma.masked_array(
+        np.ones((3, 3)),
+        mask=[
+            [False, False, False],
+            [False, False, True],
+            [False, False, False],
+        ],
+    )
+    _, _, C = make_triu_mesh(matrix)
+    assert C.mask[1, 2]
+
+
+@pytest.mark.parametrize("matrix", [np.ones(3), np.ones((2, 3))])
+def test_make_triu_mesh_rejects_non_square(matrix):
+    with pytest.raises(ValueError):
+        make_triu_mesh(matrix)
+
+
+@pytest.mark.parametrize(
+    "edges",
+    [
+        [0.0, 1.0],
+        [0.0, 1.0, 2.0, 3.0],
+        [[0.0, 1.0], [2.0, 3.0]],
+        [0.0, 1.0, np.inf],
+    ],
+)
+def test_make_triu_mesh_rejects_bad_edges(edges):
+    with pytest.raises(ValueError):
+        make_triu_mesh(np.ones((2, 2)), edges=edges)
+
+
+def test_make_triu_mesh_rejects_negative_mask_diagonals():
+    with pytest.raises(ValueError):
+        make_triu_mesh(np.ones((2, 2)), mask_diagonals=-1)
+
+
+@pytest.mark.parametrize("mask_diagonals", [1.5, True])
+def test_make_triu_mesh_rejects_non_integer_mask_diagonals(mask_diagonals):
+    with pytest.raises(TypeError):
+        make_triu_mesh(np.ones((2, 2)), mask_diagonals=mask_diagonals)
+
+
+def test_make_triu_mesh_pcolormesh_runs():
+    X, Y, C = make_triu_mesh(np.arange(9.0).reshape(3, 3))
+    _, ax = plt.subplots()
+    mesh = ax.pcolormesh(X, Y, C, shading="flat")
+    ax.figure.canvas.draw()
+    assert mesh is not None
+    plt.close(ax.figure)
 
 
 def test_set_axis_runs():
