@@ -1,5 +1,5 @@
 """
-Matplotlib helpers: axes, ticks, colormaps, patches, smoothing, KDE plots.
+Matplotlib helpers: axes, ticks, colormaps, patches, matrix helpers, KDE plots.
 
 Contains functions intended for plotting, including pure-computation helpers
 that exist only to feed plots (`kde_at`, `texsci`).
@@ -31,8 +31,8 @@ from .logticks import (
     LogTicksLocator,
     use_log_ticks,
 )
+from .matrix import make_triu_mesh, smooth_matrix, transform_triu_coords
 from .patches import attach_colorbar, plot_arc, plot_rect
-from .smoothing import smooth_matrix
 from .text import texsci
 
 __all__ = [
@@ -50,6 +50,7 @@ __all__ = [
     "kde_contour",
     "lerp_palette",
     "make_scaled_formatter",
+    "make_triu_mesh",
     "oklab_to_rgb",
     "plot_arc",
     "plot_rect",
@@ -61,6 +62,7 @@ __all__ = [
     "slice_cmap",
     "smooth_matrix",
     "texsci",
+    "transform_triu_coords",
     "update_plot",
     "use_log_ticks",
 ]
