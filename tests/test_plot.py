@@ -11,13 +11,16 @@ import scipy.stats
 
 from lib.density import DensityMeshAux, estimate_density_mesh
 from lib.plot import (
+    OkLAB,
     attach_colorbar,
     bw_method,
     get_x_grid_line_at,
     get_y_grid_line_at,
     kde_at,
     kde_contour,
+    oklab_to_rgb,
     register_colormaps,
+    rgb_to_oklab,
     set_axis,
     slice_cmap,
     smooth_matrix,
@@ -366,6 +369,31 @@ def test_use_log_ticks_derives_transforms_from_base():
     assert np.isclose(locator._fwd(10.0), 1.0)
     assert np.isclose(locator._inv(1.0), 10.0)
     plt.close(ax.figure)
+
+
+def test_rgb_to_oklab_white():
+    lab = rgb_to_oklab(1.0, 1.0, 1.0)
+    assert isinstance(lab, OkLAB)
+    assert np.allclose(lab, (1.0, 0.0, 0.0), atol=1e-7)
+
+
+def test_rgb_to_oklab_applies_srgb_transfer():
+    # Gamma-encoded mid gray is ~0.598 in OkLab, not the ~0.794 of the raw
+    # linear-RGB matrices.
+    lab = rgb_to_oklab(0.5, 0.5, 0.5)
+    assert np.allclose(lab.l, 0.59818073, atol=1e-7)
+    assert np.allclose(lab.a, 0.0, atol=1e-7)
+    assert np.allclose(lab.b, 0.0, atol=1e-7)
+
+
+def test_oklab_to_rgb_red():
+    got = oklab_to_rgb(0.6279553606, 0.2248630611, 0.1258462985)
+    assert np.allclose(got, (1.0, 0.0, 0.0), atol=1e-6)
+
+
+def test_rgb_oklab_roundtrip(rng):
+    for rgb in rng.uniform(0.0, 1.0, size=(10, 3)):
+        assert np.allclose(oklab_to_rgb(*rgb_to_oklab(*rgb)), rgb, atol=1e-5)
 
 
 def test_import_does_not_register_colormaps():

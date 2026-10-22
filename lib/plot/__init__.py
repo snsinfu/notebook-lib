@@ -16,12 +16,15 @@ from .axes import (
     update_plot,
 )
 from .colors import (
+    OkLAB,
     cm_bkr,
     cm_wrr,
     lerp_palette,
+    oklab_to_rgb,
     register_cmap,
     register_colormaps,
     register_cycle_palette,
+    rgb_to_oklab,
     slice_cmap,
 )
 from .density import kde_at, kde_contour
@@ -37,6 +40,7 @@ from .text import texsci
 __all__ = [
     "LogTicksFormatter",
     "LogTicksLocator",
+    "OkLAB",
     "attach_colorbar",
     "bw_method",
     "cm_bkr",
@@ -47,11 +51,13 @@ __all__ = [
     "kde_contour",
     "lerp_palette",
     "make_scaled_formatter",
+    "oklab_to_rgb",
     "plot_arc",
     "plot_rect",
     "register_cmap",
     "register_colormaps",
     "register_cycle_palette",
+    "rgb_to_oklab",
     "set_axis",
     "slice_cmap",
     "smooth_matrix",
