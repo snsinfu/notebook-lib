@@ -1,8 +1,9 @@
 """
-Matplotlib helpers: axes, ticks, colormaps, patches, matrix helpers, KDE plots.
+Matplotlib helpers: axes, ticks, colormaps, patches, matrix helpers, tree layout,
+KDE plots.
 
 Contains functions intended for plotting, including pure-computation helpers
-that exist only to feed plots (`kde_at`, `texsci`).
+that exist only to feed plots (`kde_at`, `texsci`, `compute_tree_layout`).
 """
 
 from __future__ import annotations
@@ -40,16 +41,19 @@ from .matrix import (
 )
 from .patches import attach_colorbar, plot_arc, plot_rect
 from .text import texsci
+from .tree import TreeLayoutNode, compute_tree_layout
 
 __all__ = [
     "LogTicksFormatter",
     "LogTicksLocator",
     "OkLAB",
+    "TreeLayoutNode",
     "attach_colorbar",
     "bw_method",
     "cm_bkr",
     "cm_wjr",
     "cm_wrr",
+    "compute_tree_layout",
     "get_x_grid_line_at",
     "get_y_grid_line_at",
     "kde_at",
