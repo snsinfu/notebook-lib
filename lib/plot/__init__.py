@@ -21,6 +21,7 @@ from .colormaps import cm_bkr, cm_wjr, cm_wrr, register_colormaps
 from .colors import (
     OkLAB,
     lerp_palette,
+    make_scalar_mappable,
     oklab_to_rgb,
     register_cmap,
     register_cycle_palette,
@@ -59,6 +60,7 @@ __all__ = [
     "kde_at",
     "kde_contour",
     "lerp_palette",
+    "make_scalar_mappable",
     "make_scaled_formatter",
     "make_triu_mesh",
     "matrix_cell_coords",

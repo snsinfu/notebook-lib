@@ -1,5 +1,5 @@
 """
-Color palettes, OkLab conversions and named-cycle helpers.
+Color palettes, OkLab conversions, colormap slicing and scalar mappables.
 """
 
 from __future__ import annotations
@@ -129,6 +129,39 @@ def slice_cmap(
     if isinstance(cmap, matplotlib.colors.ListedColormap):
         return _slice_listed_cmap(cmap, lo, hi, cmap_name)
     return _slice_linear_cmap(cmap, lo, hi, cmap_name)
+
+
+def make_scalar_mappable(
+    vmin: float,
+    vmax: float,
+    cmap: str | matplotlib.colors.Colormap,
+    *,
+    scale: Literal["linear", "log"] = "linear",
+) -> matplotlib.cm.ScalarMappable:
+    """
+    Return a `ScalarMappable` with a fixed `[vmin, vmax]` color range.
+
+    `scale` is `"linear"` (`Normalize`) or `"log"` (`LogNorm`). A log scale
+    requires `0 < vmin < vmax`. `cmap` is a colormap name or object. Use the
+    result with `sm.to_rgba(value)`, or pass `sm.norm` and `sm.cmap` to an
+    artist. Nonpositive values are masked by `LogNorm`.
+    """
+    if not (np.isfinite(vmin) and np.isfinite(vmax)):
+        raise ValueError(f"require finite vmin and vmax, got {vmin}, {vmax}")
+    if not vmin < vmax:
+        raise ValueError(f"require vmin < vmax, got vmin={vmin}, vmax={vmax}")
+
+    match scale:
+        case "linear":
+            norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
+        case "log":
+            if vmin <= 0:
+                raise ValueError(f"log scale requires vmin > 0, got {vmin}")
+            norm = matplotlib.colors.LogNorm(vmin=vmin, vmax=vmax)
+        case _:
+            raise ValueError(f"unknown scale {scale!r}; expected 'linear' or 'log'")
+
+    return matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
 
 
 class OkLAB(typing.NamedTuple):
