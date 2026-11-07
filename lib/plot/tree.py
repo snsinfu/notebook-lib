@@ -6,21 +6,23 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Iterable
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 
 class TreeLayoutNode[Node](NamedTuple):
     """
     One node of a computed tree layout.
 
-    `x` is the horizontal center of the subtree, `depth` is the root-relative
-    depth (root is 0), and `width` is the full horizontal span of the subtree
-    (the leaf width for a leaf). `children` preserves the input order. Vertical
-    placement is not included; derive it from `depth` in the caller.
+    `x` is the horizontal center of the subtree, `y` is the vertical center,
+    `depth` is the root-relative depth (root is 0), and `width` is the full
+    horizontal span of the subtree (the leaf width for a leaf). `children`
+    preserves the input order. `depth` is kept for callers that need discrete
+    levels; `y` already encodes the level position.
     """
 
     node: Node
     x: float
+    y: float
     depth: int
     width: float
     children: list[TreeLayoutNode[Node]]
@@ -39,18 +41,30 @@ def compute_tree_layout[Node](
     children: Callable[[Node], Iterable[Node]],
     leaf_width: float | Callable[[Node], float] = 1.0,
     branch_margin: float | Callable[[Node], float] = 0.0,
+    branch_height: float = 1.0,
+    direction: Literal["down", "up"] = "down",
 ) -> TreeLayoutNode[Node]:
     """
-    Compute a horizontal tree layout without overlapping subtrees.
+    Compute a tree layout without overlapping subtrees.
 
-    `x` is the subtree center, `width` its full horizontal span, and `depth`
-    the root-relative depth. Vertical placement is left to the caller. The
-    root is at `x = 0`. `leaf_width` is a scalar or a callable evaluated for
-    leaves only, and `branch_margin` is a scalar or a callable evaluated for
-    internal nodes only.
+    `x` is the subtree center and `width` its full horizontal span.
+    `branch_height` is the vertical distance between a node and its children:
+    `direction="down"` decreases `y` with depth and `"up"` increases it. This
+    is a data direction, so inverting the y axis flips the drawn tree. The
+    root is at `x = 0, y = 0`, and `depth` is root-relative. `leaf_width` is a
+    scalar or a callable evaluated for leaves only, and `branch_margin` is a
+    scalar or a callable evaluated for internal nodes only.
     """
     leaf_width_of = _resolve_scalar(leaf_width)
     margin_of = _resolve_scalar(branch_margin)
+    height = _check_nonnegative(branch_height, "branch_height")
+    match direction:
+        case "down":
+            step = -height
+        case "up":
+            step = height
+        case _:
+            raise ValueError(f"direction must be 'down' or 'up', not {direction!r}")
 
     def build(node: Node) -> _BuildNode[Node]:
         child_nodes = list(children(node))
@@ -63,15 +77,18 @@ def compute_tree_layout[Node](
         width = sum(child.width for child in built) + margin * (len(built) - 1)
         return _BuildNode(node, width, margin, built)
 
-    def place(node: _BuildNode[Node], x: float, depth: int) -> TreeLayoutNode[Node]:
-        cursor = x - node.width / 2
+    def place(
+        node: _BuildNode[Node], center_x: float, center_y: float, depth: int
+    ) -> TreeLayoutNode[Node]:
+        cursor = center_x - node.width / 2
+        child_y = center_y + step
         placed: list[TreeLayoutNode[Node]] = []
         for child in node.children:
-            placed.append(place(child, cursor + child.width / 2, depth + 1))
+            placed.append(place(child, cursor + child.width / 2, child_y, depth + 1))
             cursor += child.width + node.margin
-        return TreeLayoutNode(node.node, x, depth, node.width, placed)
+        return TreeLayoutNode(node.node, center_x, center_y, depth, node.width, placed)
 
-    return place(build(root), 0.0, 0)
+    return place(build(root), 0.0, 0.0, 0)
 
 
 def _resolve_scalar[Node](

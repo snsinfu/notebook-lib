@@ -13,12 +13,20 @@ class Node:
         self.children = list(children)
 
 
-def layout_tree(root, margin=0.0, leaf_width=lambda node: node.width):
+def layout_tree(
+    root,
+    margin=0.0,
+    leaf_width=lambda node: node.width,
+    branch_height=1.0,
+    direction="down",
+):
     return compute_tree_layout(
         root,
         children=lambda node: node.children,
         leaf_width=leaf_width,
         branch_margin=margin,
+        branch_height=branch_height,
+        direction=direction,
     )
 
 
@@ -45,6 +53,7 @@ def test_single_leaf():
     result = layout_tree(leaf)
     assert result.node is leaf
     assert result.x == 0.0
+    assert result.y == 0.0
     assert result.depth == 0
     assert result.width == 2.0
     assert result.children == []
@@ -56,6 +65,7 @@ def test_two_leaves_with_margin():
     assert result.width == 7.0
     assert result.x == 0.0
     assert [child.x for child in result.children] == [-2.5, 1.5]
+    assert [child.y for child in result.children] == [-1.0, -1.0]
     assert [child.depth for child in result.children] == [1, 1]
 
 
@@ -78,12 +88,52 @@ def test_chain_preserves_x_and_increments_depth():
     root = Node("a", children=[child])
     result = layout_tree(root)
     assert result.x == 0.0
+    assert result.y == 0.0
     assert result.width == 2.0
     assert result.depth == 0
     assert result.children[0].x == 0.0
+    assert result.children[0].y == -1.0
     assert result.children[0].depth == 1
     assert result.children[0].children[0].x == 0.0
+    assert result.children[0].children[0].y == -2.0
     assert result.children[0].children[0].depth == 2
+
+
+def test_branch_height_scales_y():
+    grandchild = Node("c")
+    child = Node("b", children=[grandchild])
+    root = Node("a", children=[child])
+    result = layout_tree(root, branch_height=2.5)
+    assert [result.y, result.children[0].y, result.children[0].children[0].y] == [
+        0.0,
+        -2.5,
+        -5.0,
+    ]
+
+
+def test_direction_up_grows_y_positive():
+    grandchild = Node("c")
+    child = Node("b", children=[grandchild])
+    root = Node("a", children=[child])
+    result = layout_tree(root, branch_height=2.5, direction="up")
+    assert [result.y, result.children[0].y, result.children[0].children[0].y] == [
+        0.0,
+        2.5,
+        5.0,
+    ]
+
+
+@pytest.mark.parametrize("direction", ["down", "up"])
+def test_branch_height_zero_flattens_levels(direction):
+    grandchild = Node("c")
+    child = Node("b", children=[grandchild])
+    root = Node("a", children=[child])
+    result = layout_tree(root, branch_height=0.0, direction=direction)
+    assert [result.y, result.children[0].y, result.children[0].children[0].y] == [
+        0.0,
+        0.0,
+        0.0,
+    ]
 
 
 def test_leaf_intervals_do_not_overlap(rng):
@@ -154,6 +204,17 @@ def test_branch_margin_not_called_for_leaves():
 
     root = Node("root", children=[Node("a"), Node("b")])
     layout_tree(root, margin=branch_margin)
+
+
+def test_invalid_direction():
+    with pytest.raises(ValueError, match="direction"):
+        layout_tree(Node("leaf"), direction="sideways")
+
+
+@pytest.mark.parametrize("height", [-1.0, math.nan, math.inf])
+def test_invalid_branch_height(height):
+    with pytest.raises(ValueError, match="branch_height"):
+        layout_tree(Node("leaf"), branch_height=height)
 
 
 @pytest.mark.parametrize("width", [-1.0, math.nan, math.inf])
