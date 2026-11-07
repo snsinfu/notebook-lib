@@ -20,6 +20,7 @@ from lib.plot import (
     kde_at,
     kde_contour,
     lerp_palette,
+    make_scalar_mappable,
     make_triu_mesh,
     matrix_cell_coords,
     oklab_to_rgb,
@@ -574,6 +575,61 @@ def test_attach_colorbar_horizontal_is_right_aligned():
         ax.figure.canvas.draw()
         assert np.isclose(cbar.ax.get_position().x1, ax.get_position().x1)
         plt.close(ax.figure)
+
+
+def test_make_scalar_mappable_linear():
+    sm = make_scalar_mappable(0.0, 2.0, "viridis")
+    assert isinstance(sm.norm, matplotlib.colors.Normalize)
+    assert sm.cmap.name == "viridis"
+    assert sm.norm(0.0) == 0.0
+    assert sm.norm(1.0) == 0.5
+    assert sm.norm(2.0) == 1.0
+
+
+def test_make_scalar_mappable_log():
+    sm = make_scalar_mappable(1.0, 100.0, "viridis", scale="log")
+    assert isinstance(sm.norm, matplotlib.colors.LogNorm)
+    assert np.isclose(sm.norm(10.0), 0.5)
+    assert sm.to_rgba(np.array([1.0, 10.0, 100.0])).shape == (3, 4)
+
+
+def test_make_scalar_mappable_accepts_colormap_object():
+    cmap = matplotlib.colormaps["viridis"]
+    sm = make_scalar_mappable(0.0, 1.0, cmap)
+    assert sm.cmap is cmap
+
+
+@pytest.mark.parametrize(
+    "vmin,vmax,scale",
+    [
+        (0.0, 0.0, "linear"),
+        (1.0, 0.0, "linear"),
+        (np.nan, 1.0, "linear"),
+        (0.0, 1.0, "log"),
+        (1.0, 10.0, "symlog"),
+    ],
+)
+def test_make_scalar_mappable_rejects_bad_input(vmin, vmax, scale):
+    with pytest.raises(ValueError):
+        make_scalar_mappable(vmin, vmax, "viridis", scale=scale)
+
+
+def test_make_scalar_mappable_colorbar_smoke():
+    _, ax = plt.subplots()
+    sm = make_scalar_mappable(1.0, 100.0, "viridis", scale="log")
+    cbar = attach_colorbar(ax, sm)
+    ax.figure.canvas.draw()
+    assert cbar.norm is sm.norm
+    plt.close(ax.figure)
+
+
+def test_make_scalar_mappable_shared_norm_does_not_autoscale():
+    sm = make_scalar_mappable(0.0, 10.0, "viridis")
+    _, ax = plt.subplots()
+    image = ax.imshow(np.arange(4).reshape(2, 2), norm=sm.norm, cmap=sm.cmap)
+    assert image.norm.vmin == 0.0
+    assert image.norm.vmax == 10.0
+    plt.close(ax.figure)
 
 
 def test_grid_line_lookup_finds_tick():
