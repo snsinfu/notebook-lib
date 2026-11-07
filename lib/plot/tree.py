@@ -43,6 +43,8 @@ def compute_tree_layout[Node](
     branch_margin: float | Callable[[Node], float] = 0.0,
     branch_height: float = 1.0,
     direction: Literal["down", "up"] = "down",
+    x: float = 0.0,
+    y: float = 0.0,
 ) -> TreeLayoutNode[Node]:
     """
     Compute a tree layout without overlapping subtrees.
@@ -51,9 +53,10 @@ def compute_tree_layout[Node](
     `branch_height` is the vertical distance between a node and its children:
     `direction="down"` decreases `y` with depth and `"up"` increases it. This
     is a data direction, so inverting the y axis flips the drawn tree. The
-    root is at `x = 0, y = 0`, and `depth` is root-relative. `leaf_width` is a
-    scalar or a callable evaluated for leaves only, and `branch_margin` is a
-    scalar or a callable evaluated for internal nodes only.
+    root is at `(x, y)` (default the origin), and `depth` is root-relative.
+    `leaf_width` is a scalar or a callable evaluated for leaves only, and
+    `branch_margin` is a scalar or a callable evaluated for internal nodes
+    only.
     """
     leaf_width_of = _resolve_scalar(leaf_width)
     margin_of = _resolve_scalar(branch_margin)
@@ -65,6 +68,8 @@ def compute_tree_layout[Node](
             step = height
         case _:
             raise ValueError(f"direction must be 'down' or 'up', not {direction!r}")
+    origin_x = _check_finite(x, "x")
+    origin_y = _check_finite(y, "y")
 
     def build(node: Node) -> _BuildNode[Node]:
         child_nodes = list(children(node))
@@ -88,7 +93,7 @@ def compute_tree_layout[Node](
             cursor += child.width + node.margin
         return TreeLayoutNode(node.node, center_x, center_y, depth, node.width, placed)
 
-    return place(build(root), 0.0, 0.0, 0)
+    return place(build(root), origin_x, origin_y, 0)
 
 
 def _resolve_scalar[Node](
@@ -100,8 +105,15 @@ def _resolve_scalar[Node](
     return lambda _node: constant
 
 
-def _check_nonnegative(value: float, name: str) -> float:
+def _check_finite(value: float, name: str) -> float:
     value = float(value)
-    if not math.isfinite(value) or value < 0:
+    if not math.isfinite(value):
+        raise ValueError(f"{name} must be finite")
+    return value
+
+
+def _check_nonnegative(value: float, name: str) -> float:
+    value = _check_finite(value, name)
+    if value < 0:
         raise ValueError(f"{name} must be finite and nonnegative")
     return value

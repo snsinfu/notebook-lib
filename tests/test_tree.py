@@ -19,6 +19,8 @@ def layout_tree(
     leaf_width=lambda node: node.width,
     branch_height=1.0,
     direction="down",
+    x=0.0,
+    y=0.0,
 ):
     return compute_tree_layout(
         root,
@@ -27,6 +29,8 @@ def layout_tree(
         branch_margin=margin,
         branch_height=branch_height,
         direction=direction,
+        x=x,
+        y=y,
     )
 
 
@@ -136,6 +140,29 @@ def test_branch_height_zero_flattens_levels(direction):
     ]
 
 
+def test_root_origin_offsets_layout():
+    root = Node("root", children=[Node("a", width=2.0), Node("b", width=4.0)])
+    result = layout_tree(root, margin=1.0, x=10.0, y=5.0, branch_height=2.0)
+    assert result.x == 10.0
+    assert result.y == 5.0
+    assert result.width == 7.0
+    assert [child.x for child in result.children] == [7.5, 11.5]
+    assert [child.y for child in result.children] == [3.0, 3.0]
+    assert [child.depth for child in result.children] == [1, 1]
+
+
+def test_root_origin_accepts_negative_values():
+    grandchild = Node("c")
+    child = Node("b", children=[grandchild])
+    root = Node("a", children=[child])
+    result = layout_tree(root, x=-3.0, y=-4.0, branch_height=2.0, direction="up")
+    assert result.x == -3.0
+    assert result.y == -4.0
+    assert result.children[0].x == -3.0
+    assert result.children[0].y == -2.0
+    assert result.children[0].children[0].y == 0.0
+
+
 def test_leaf_intervals_do_not_overlap(rng):
     for _ in range(25):
         root = random_tree(rng, 4)
@@ -215,6 +242,13 @@ def test_invalid_direction():
 def test_invalid_branch_height(height):
     with pytest.raises(ValueError, match="branch_height"):
         layout_tree(Node("leaf"), branch_height=height)
+
+
+@pytest.mark.parametrize("name", ["x", "y"])
+@pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])
+def test_invalid_root_origin(name, value):
+    with pytest.raises(ValueError, match=f"^{name} must be finite"):
+        layout_tree(Node("leaf"), **{name: value})
 
 
 @pytest.mark.parametrize("width", [-1.0, math.nan, math.inf])
