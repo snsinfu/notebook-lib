@@ -73,7 +73,8 @@ def attach_colorbar(
 
     `size` is the colorbar thickness and `length` its long dimension (both as
     axes fractions); `margin` is the gap to the axes (defaults to `size`).
-    `orientation` is `"vertical"` (right) or `"horizontal"` (bottom).
+    `orientation` is `"vertical"` (right) or `"horizontal"` (bottom,
+    right-aligned).
     """
     if margin is None:
         margin = size
@@ -82,7 +83,7 @@ def attach_colorbar(
         case "vertical":
             bbox = (1 + margin, 0, size, length)  # right
         case "horizontal":
-            bbox = (0.5 - length / 2, -(size + margin), length, size)  # bottom
+            bbox = (1 - length, -(size + margin), length, size)  # bottom, right
         case _:
             raise ValueError(
                 "orientation must be 'vertical' or 'horizontal',"

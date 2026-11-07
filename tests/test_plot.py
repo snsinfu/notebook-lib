@@ -565,6 +565,17 @@ def test_attach_colorbar_horizontal_honors_length():
     assert widths[1] > widths[0]
 
 
+def test_attach_colorbar_horizontal_is_right_aligned():
+    sm = plt.cm.ScalarMappable(cmap="viridis")
+    sm.set_array([0.0, 1.0])
+    for length in (0.3, 0.9):
+        _, ax = plt.subplots()
+        cbar = attach_colorbar(ax, sm, orientation="horizontal", length=length)
+        ax.figure.canvas.draw()
+        assert np.isclose(cbar.ax.get_position().x1, ax.get_position().x1)
+        plt.close(ax.figure)
+
+
 def test_grid_line_lookup_finds_tick():
     _, ax = plt.subplots()
     ax.set_xticks([0.0, 1.0, 2.0])
