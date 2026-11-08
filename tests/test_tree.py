@@ -328,3 +328,77 @@ def test_iter_nodes_repeated_node():
     assert nodes[1].node is leaf
     assert nodes[2].node is leaf
     assert nodes[1].x != nodes[2].x
+
+
+def test_walk_preorder_matches_iter_nodes():
+    root = Node(
+        "root",
+        children=[
+            Node("a", children=[Node("a1"), Node("a2")]),
+            Node("b"),
+        ],
+    )
+    result = layout_tree(root)
+    walked = []
+    result.walk(lambda node, _: walked.append(node), context=None)
+    assert walked == list(result.iter_nodes())
+
+
+def test_walk_context_scoped_to_subtree():
+    root = Node(
+        "root",
+        children=[
+            Node("marked", children=[Node("marked_child")]),
+            Node("sibling", children=[Node("shared")]),
+        ],
+    )
+    result = layout_tree(root)
+    seen = []
+
+    def visit(node, dimmed):
+        seen.append((node.node.name, dimmed))
+        return dimmed or node.node.name == "marked"
+
+    assert result.walk(visit, context=False) is None
+    assert seen == [
+        ("root", False),
+        ("marked", False),
+        ("marked_child", True),
+        ("sibling", False),
+        ("shared", False),
+    ]
+
+
+def test_walk_accumulates_arbitrary_context():
+    root = Node("root", children=[Node("a", children=[Node("a1")])])
+    result = layout_tree(root)
+    paths = []
+
+    def visit(node, path):
+        path = (*path, node.node.name)
+        paths.append(path)
+        return path
+
+    result.walk(visit, context=())
+    assert paths == [("root",), ("root", "a"), ("root", "a", "a1")]
+
+
+def test_walk_single_leaf():
+    leaf = Node("leaf")
+    result = layout_tree(leaf)
+    seen = []
+
+    def visit(node, context):
+        seen.append((node.node, context))
+        return context
+
+    result.walk(visit, context="ctx")
+    assert seen == [(leaf, "ctx")]
+
+
+def test_walk_subtree():
+    root = Node("root", children=[Node("a", children=[Node("a1")]), Node("b")])
+    result = layout_tree(root)
+    seen = []
+    result.children[0].walk(lambda node, _: seen.append(node.node.name), context=None)
+    assert seen == ["a", "a1"]

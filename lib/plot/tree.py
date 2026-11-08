@@ -18,7 +18,7 @@ class TreeLayoutNode[Node](NamedTuple):
     horizontal span of the subtree (the leaf width for a leaf). `children`
     preserves the input order. `depth` is kept for callers that need discrete
     levels; `y` already encodes the level position. Use `iter_nodes` for a
-    stateless pre-order traversal.
+    stateless pre-order traversal and `walk` for one that carries context.
     """
 
     node: Node
@@ -38,6 +38,29 @@ class TreeLayoutNode[Node](NamedTuple):
         yield self
         for child in self.children:
             yield from child.iter_nodes()
+
+    def walk[Context](
+        self,
+        visit: Callable[[TreeLayoutNode[Node], Context], Context],
+        *,
+        context: Context,
+    ) -> None:
+        """
+        Visit this node and its descendants in pre-order.
+
+        `visit` receives each layout node and the context inherited from its
+        parent. Its return value is passed to all children, so a context change
+        applies to the whole subtree. Siblings receive the context returned by
+        their common parent, not a sibling's context. Use an immutable context,
+        or return a new value, for subtree-local state.
+        """
+
+        def step(node: TreeLayoutNode[Node], ctx: Context) -> None:
+            child_context = visit(node, ctx)
+            for child in node.children:
+                step(child, child_context)
+
+        step(self, context)
 
 
 class _BuildNode[Node](NamedTuple):
