@@ -1,11 +1,11 @@
 """
-Tree layout data for plot drawing.
+Tree layout data and traversal for plot drawing.
 """
 
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from typing import Literal, NamedTuple
 
 
@@ -17,7 +17,8 @@ class TreeLayoutNode[Node](NamedTuple):
     `depth` is the root-relative depth (root is 0), and `width` is the full
     horizontal span of the subtree (the leaf width for a leaf). `children`
     preserves the input order. `depth` is kept for callers that need discrete
-    levels; `y` already encodes the level position.
+    levels; `y` already encodes the level position. Use `iter_nodes` for a
+    stateless pre-order traversal.
     """
 
     node: Node
@@ -26,6 +27,17 @@ class TreeLayoutNode[Node](NamedTuple):
     depth: int
     width: float
     children: list[TreeLayoutNode[Node]]
+
+    def iter_nodes(self) -> Iterator[TreeLayoutNode[Node]]:
+        """
+        Yield this node and its descendants in pre-order.
+
+        Yields layout nodes, not the wrapped `node` values. Children keep the
+        stored order. This is the stateless counterpart to `walk`.
+        """
+        yield self
+        for child in self.children:
+            yield from child.iter_nodes()
 
 
 class _BuildNode[Node](NamedTuple):

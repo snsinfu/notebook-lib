@@ -3,7 +3,7 @@ import math
 
 import pytest
 
-from lib.plot import compute_tree_layout
+from lib.plot import TreeLayoutNode, compute_tree_layout
 
 
 class Node:
@@ -275,3 +275,56 @@ def test_invalid_callable_branch_margin(margin):
     root = Node("root", children=[Node("a"), Node("b")])
     with pytest.raises(ValueError, match="branch_margin"):
         layout_tree(root, margin=lambda node: margin)
+
+
+def test_iter_nodes_preorder():
+    root = Node(
+        "root",
+        children=[
+            Node("a", children=[Node("a1"), Node("a2")]),
+            Node("b"),
+        ],
+    )
+    result = layout_tree(root)
+    assert [node.node.name for node in result.iter_nodes()] == [
+        "root",
+        "a",
+        "a1",
+        "a2",
+        "b",
+    ]
+
+
+def test_iter_nodes_single_leaf():
+    leaf = Node("leaf")
+    result = layout_tree(leaf)
+    assert list(result.iter_nodes()) == [result]
+
+
+def test_iter_nodes_yields_layout_nodes():
+    root = Node("root", children=[Node("a"), Node("b")])
+    result = layout_tree(root)
+    nodes = list(result.iter_nodes())
+    assert all(isinstance(node, TreeLayoutNode) for node in nodes)
+    assert [node.node for node in nodes] == [root, root.children[0], root.children[1]]
+
+
+def test_iter_nodes_subtree():
+    root = Node("root", children=[Node("a", children=[Node("a1")]), Node("b")])
+    result = layout_tree(root)
+    assert [node.node.name for node in result.children[0].iter_nodes()] == [
+        "a",
+        "a1",
+    ]
+
+
+def test_iter_nodes_repeated_node():
+    leaf = Node("dup")
+    root = Node("root", children=[leaf, leaf])
+    result = layout_tree(root)
+    nodes = list(result.iter_nodes())
+    assert len(nodes) == 3
+    assert nodes[1] is not nodes[2]
+    assert nodes[1].node is leaf
+    assert nodes[2].node is leaf
+    assert nodes[1].x != nodes[2].x
